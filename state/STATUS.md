@@ -25,7 +25,7 @@ Phases: `NOT_STARTED` → `T0` → `T1` → `T2` → `STABILIZING` → `DEMO_REA
 
 | Tier | Total | DONE | IN_PROGRESS | BLOCKED | TODO |
 | --- | --- | --- | --- | --- | --- |
-| T0 | 19 | 1 | 0 | 0 | 18 |
+| T0 | 19 | 2 | 0 | 0 | 17 |
 | T1 | 10 | 0 | 0 | 0 | 10 |
 | T2 | 4 | 0 | 0 | 0 | 4 |
 
@@ -41,7 +41,7 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | Task | Owner | State | Note |
 | --- | --- | --- | --- |
 | T0-01 Repo scaffold | claude (solo) | DONE | completed 2026-09-19T13:21:39Z; pnpm verify green. See N-001: F-01's full SPEC 16 criteria still need T0-02/T0-03. |
-| T0-02 Shared contracts | claude (solo) | IN_PROGRESS | claimed by claude, 2026-09-19T13:23:24Z; AGENT_SPLIT.md 3 requires Opus for this task |
+| T0-02 Shared contracts | claude (solo) | DONE | completed 2026-09-19T13:38:06Z (built on Opus per AGENT_SPLIT.md 3); pnpm verify green, 101 new tests, all 24 SPEC 5 schemas covered. See DEV-001, N-005, N-006. |
 | T0-03 Manifest and shells | claude (solo) | TODO | |
 | T0-04 Demo page static | gemini | TODO | fixture for every other T0 test |
 | T0-05 Element index | claude | TODO | |

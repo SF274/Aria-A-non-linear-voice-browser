@@ -56,3 +56,15 @@ At the end of every working session, before context is lost, write here anything
 - **Context:** `corepack prepare pnpm@9 --activate` failed with `EPERM: operation not permitted, open 'C:\Program Files\nodejs\pnpm'` on this machine (Windows, non-elevated shell).
 - **Observation:** `npm install -g pnpm` succeeded and installed pnpm 12.4.2, which satisfies the "pnpm 9" minimum in `state/ENVIRONMENT.md`. `pnpm install` also auto-created `pnpm-workspace.yaml` with a `minimumReleaseAgeExclude` block (a pnpm 12 supply-chain feature); this is normal pnpm 12 behavior, not something added by hand.
 - **Relevance:** if a fresh session on this same machine hits the same corepack `EPERM`, skip straight to `npm install -g pnpm` rather than re-attempting corepack (would count as the same fix attempt under R5.3 anyway).
+
+### N-005 — `ResolverResponseSchema` deliberately does not range-check `confidence` or pattern-check `elementId`
+- **Date:** 2026-09-19
+- **Context:** `src/shared/contracts.ts`'s `ResolverResponseSchema` (SPEC 5.5) validates the shape of a parsed Gemini response, but leaves `confidence` as a bare `z.number()` (no `.min(0).max(1)`) and `elementId` as a bare `z.string()` (no `ELEMENT_ID_PATTERN`).
+- **Observation:** this is intentional, not an oversight. SPEC 11.4 rule 5 requires an out-of-range `confidence` to be *clamped and penalised by 0.1* downstream, not rejected at the schema boundary; rule 3 requires an `elementId` not present in the live index to be treated as a *miss*, which requires cross-referencing the current `ElementIndex` — something `contracts.ts` has no access to and shouldn't. If the schema rejected either case outright, SPEC 11.4 rules 3 and 5 would become unreachable dead code.
+- **Relevance:** whoever implements T0-13 (Gemini client) and T0-14 (action validation) should apply `ResolverResponseSchema` first for shape validation, then apply the SPEC 11.4 rule 5 clamp/penalty logic, then separately validate each `elementId` against the live index per SPEC 7.6.1 rule 3 (that membership check belongs in `src/sw/execute/validate.ts`, not in the shared contract).
+
+### N-006 — SPEC 9.3 gives no base peak gain for the "Other" audio role class
+- **Date:** 2026-09-19
+- **Context:** SPEC 9.3's "Timbre by role class" table gives explicit peak gains for navigational (0.16), control (0.18), and input (0.14), but the "Other" row says only "gain × 0.7" with no base value to multiply.
+- **Observation:** `src/shared/constants.ts`'s `ROLE_CLASS_TIMBRE.other` encodes exactly what SPEC states — `{ oscillator: "sine", gainMultiplier: 0.7 }` — with no `peakGain` field, rather than inventing a number SPEC doesn't give.
+- **Relevance:** whoever implements T1-02 (audio engine, F-10) will need an actual gain value for the "Other" class and will hit this gap directly. This is a genuine SPEC gap worth a `state/HUMAN_DECISIONS.md` question if a real "Other"-class element turns up in testing (most indexed elements fall into navigational/control/input per SPEC 12.2's selector union, so this may never actually fire — worth checking before escalating).
