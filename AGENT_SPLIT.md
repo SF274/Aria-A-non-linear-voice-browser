@@ -27,6 +27,22 @@ Every `state/STATUS.md` claim, every commit message, and every `state/NOTES.md` 
 
 ## 3. Task ownership
 
+### Model tier within `claude`'s own list
+
+`claude`'s list is large enough (roughly 30.5 person-hours of specified work) that running all of it on Opus isn't just wasteful, it likely won't happen: Opus's usage allowance is much smaller than Sonnet's on every plan, and Max plans auto-downgrade to Sonnet once usage crosses a threshold regardless of what you're working on. Left to a usage-based auto-switch, Opus gets spent on whatever comes first in the task order, not on what actually needs it.
+
+`[DECISION]` Default to Sonnet for everything `claude` owns. Manually switch to Opus, on purpose, only for:
+
+| Task | Why Opus | Then |
+| --- | --- | --- |
+| T0-02 (shared contracts) | Every other file imports this. A subtle schema mistake here propagates everywhere else in the repo. | Switch back to Sonnet once merged. |
+| T0-13 (Gemini client, prompts, response validation) | This is the prompt-injection boundary in `SPEC.md` section 8. Getting the sanitization or the schema wrong is the actual security risk, not a stylistic one. | Switch back after. |
+| T0-14 (action validation) | The other half of the same boundary — the nine rules standing between a model suggestion and something executing in the browser. | Switch back after. |
+
+For T0-05 (element index) and T0-15 (executor with re-resolution), implement on Sonnet, then run one Opus review pass before marking `DONE` — these are the two places where a "compiles and looks right" bug hides (accessible-name edge cases, stale-element handling) and a second, more careful read catches more than a full Opus rewrite would justify in quota.
+
+Switch with `/model opus` immediately before one of the three tasks above, and back with `/model sonnet` (or just let a new session default back) once it's merged and reviewed. Don't leave it on Opus by default "to be safe" — that's the failure mode this section exists to avoid.
+
 Reference: `TASKS.md`. IDs and dependencies are defined there; this table only assigns an owner.
 
 ### `claude` owns
