@@ -70,8 +70,13 @@ export function copyManifest(): void {
   writeFileSync(resolve(outDir, "manifest.json"), raw);
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   root,
+  define: {
+    // SPEC §17.3: test.transcript bypass is compiled out of production builds.
+    // In dev and test modes, __ECHO_DEV__ evaluates to true.
+    __ECHO_DEV__: mode !== "production",
+  },
   build: {
     outDir,
     target: "es2022",
@@ -79,4 +84,4 @@ export default defineConfig({
       output: ENTRY_OUTPUT,
     },
   },
-});
+}));

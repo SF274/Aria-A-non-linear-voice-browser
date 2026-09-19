@@ -1,11 +1,15 @@
 import {
   type ElementIndex,
   type Envelope,
+  type ExecuteRequest,
+  type ExecuteResult,
   ENVELOPE_NS,
   isEnvelopeFor,
 } from "../shared/contracts";
+import { executeRequest } from "./executor";
 import { buildElementIndex } from "./index-builder";
 import { createIndexObserver } from "./observer";
+import { initHoldToTalk } from "./hold-to-talk";
 
 // Cached index per SPEC 6.5 (under 1500 ms and not invalidated by mutation)
 let cachedIndex: ElementIndex | null = null;
@@ -58,15 +62,63 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         return true;
       }
 
+      // Handle exec.run (SPEC 5.16, SPEC 7.6.3)
+      if (message.type === "exec.run") {
+        const payload = message.payload as ExecuteRequest;
+        executeRequest(payload, { buildIndexFn: getOrBuildIndex })
+          .then((result) => {
+            const response: Envelope<ExecuteResult> = {
+              ns: ENVELOPE_NS,
+              target: "sw",
+              type: "exec.run",
+              reqId: message.reqId,
+              payload: result,
+            };
+            sendResponse(response);
+          })
+          .catch((err) => {
+            const errorResult: ExecuteResult = {
+              ok: false,
+              completed: 0,
+              failedAtIndex: 0,
+              results: [
+                {
+                  index: 0,
+                  verb: payload?.actions?.[0]?.verb || "click",
+                  elementId: payload?.actions?.[0]?.elementId || "",
+                  resolvedName: null,
+                  status: "error",
+                  detail: err instanceof Error ? err.message : String(err),
+                },
+              ],
+            };
+            const response: Envelope<ExecuteResult> = {
+              ns: ENVELOPE_NS,
+              target: "sw",
+              type: "exec.run",
+              reqId: message.reqId,
+              payload: errorResult,
+            };
+            sendResponse(response);
+          });
+        return true;
+      }
+
       return undefined;
     }
   );
+}
+
+// Initialize hold-to-talk on page load (SPEC §6.1).
+if (typeof window !== "undefined") {
+  initHoldToTalk();
 }
 
 declare global {
   interface Window {
     __ECHO_BUILD_INDEX__?: typeof buildElementIndex;
     __ECHO_GET_INDEX__?: typeof getOrBuildIndex;
+    __ECHO_EXECUTE_REQUEST__?: typeof executeRequest;
   }
 }
 
@@ -74,6 +126,7 @@ declare global {
 if (typeof window !== "undefined") {
   window.__ECHO_BUILD_INDEX__ = buildElementIndex;
   window.__ECHO_GET_INDEX__ = getOrBuildIndex;
+  window.__ECHO_EXECUTE_REQUEST__ = executeRequest;
 }
 
 // SPEC 16, F-01: the content script logs a single readiness line on inject.

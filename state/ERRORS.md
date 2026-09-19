@@ -43,8 +43,14 @@ These have not happened yet in this repository. They are recorded because they a
 
 ## Open errors
 
-*(none yet)*
+*(none)*
 
 ## Resolved errors
 
-*(none yet)*
+### E-001 — jsdom layout and scrollIntoView missing in executor.spec.ts
+- **Signature:** TypeError: Cannot read properties of undefined (reading 'role') at reResolveElement and Error: The property "scrollIntoView" is not defined on the object in test/dom/executor.spec.ts
+- **Task:** T0-15
+- **First seen:** 2026-09-19T16:01:18Z
+- **Attempt 1:** Mock getBoundingClientRect, scrollIntoView, and document scroll dimensions in test/dom/executor.spec.ts, add null-safety guards in reresolve.ts and executor.ts, pass { hidden: true } to computeAccessibleName.
+- **Status:** RESOLVED
+- **Root cause:** jsdom lacks a layout engine, so getBoundingClientRect() returns zeroes (causing index builder and visibility checks to drop elements) and scrollIntoView is undefined by default. Resolved by adding realistic mocks and defensive function checks.

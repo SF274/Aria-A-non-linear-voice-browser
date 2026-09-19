@@ -155,3 +155,52 @@ export const MALFORMED_CONFIDENCE_PENALTY = 0.1;
 
 /** SPEC 12.2: index cap, document order, `truncated: true` when exceeded. */
 export const MAX_INDEX = 120;
+
+// ---------------------------------------------------------------------------
+// SPEC 6.1, 10.4 — hold-to-talk and watchdog timers
+// ---------------------------------------------------------------------------
+
+/** SPEC 6.1: taps shorter than this are discarded as accidental (ms). */
+export const HOLD_MIN_DURATION_MS = 250;
+
+/** SPEC 6.1 / 10.4: watchdog forces stt.stop if keyup never arrives (ms). */
+export const WATCHDOG_TIMEOUT_MS = 15_000;
+
+/** SPEC 6.4: if no final transcript arrives in this window, use last interim or ERROR (ms). */
+export const TRANSCRIBING_TIMEOUT_MS = 3_000;
+
+/** SPEC 5.9 / 7.5: clarification expires after this window (ms). */
+export const CLARIFY_TIMEOUT_MS = 15_000;
+
+// ---------------------------------------------------------------------------
+// SPEC 4.5, 10.2, 10.3, 13 — storage keys (chrome.storage.local / .session)
+// ---------------------------------------------------------------------------
+
+/** SPEC 10.2: key in chrome.storage.local that records the mic grant result. */
+export const MIC_GRANTED_KEY = "micGranted";
+
+/** SPEC 4.5: key in chrome.storage.session that holds the serialized session. */
+export const SESSION_STORAGE_KEY = "session";
+
+/**
+ * SPEC 10.3: key in chrome.storage.session for the cached recognition mode.
+ * Avoids calling SpeechRecognition.available() on every command.
+ */
+export const RECOGNITION_MODE_KEY = "recognitionMode";
+
+// ---------------------------------------------------------------------------
+// SPEC 11 — Gemini defaults
+// ---------------------------------------------------------------------------
+
+/** SPEC 11.2: default model identifier from state/ENVIRONMENT.md. */
+export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+
+// ---------------------------------------------------------------------------
+// SPEC 6.18 — tab / search / bookmark commands
+// ---------------------------------------------------------------------------
+
+/**
+ * SPEC 6.18: compile-time constant URL template for web search.
+ * `[HUMAN: HD-04]` Confirm the search engine before the demo.
+ */
+export const SEARCH_TEMPLATE = "https://www.google.com/search?q=%s";

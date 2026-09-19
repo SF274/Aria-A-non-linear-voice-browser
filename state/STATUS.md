@@ -25,7 +25,7 @@ Phases: `NOT_STARTED` → `T0` → `T1` → `T2` → `STABILIZING` → `DEMO_REA
 
 | Tier | Total | DONE | IN_PROGRESS | BLOCKED | TODO |
 | --- | --- | --- | --- | --- | --- |
-| T0 | 19 | 9 | 0 | 0 | 10 |
+| T0 | 19 | 11 | 0 | 0 | 8 |
 | T1 | 10 | 0 | 0 | 0 | 10 |
 | T2 | 4 | 0 | 0 | 0 | 4 |
 
@@ -47,14 +47,14 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | T0-05 Element index | claude | DONE | completed 2026-09-19T14:26:00Z; pnpm verify green, all 20 DOM tests and 4 observer tests pass, IG-05 PASS (80.77 ms / 22.53 KB for 120 elements; 16.30 ms on demo page), F-04 criteria fully met. |
 | T0-06 Normalization | claude | DONE | completed 2026-09-19T15:34:00Z; pnpm verify green, normalizeTranscript and cleanText covered by 31 tests in test/unit/normalize.spec.ts, F-05 normalization criterion passing. |
 | T0-07 Local resolver | gemini | DONE | completed 2026-09-19T15:47:32Z; pnpm verify green (167 Vitest + 10 Playwright e2e), IG-07 PASS (16/20 = 80.0%), F-05 criteria fully met (exact download ambiguity, sandwich miss, disabled elements never win). |
-| T0-08 Session state machine | claude | TODO | |
-| T0-09 Mic permission | claude | TODO | |
-| T0-10 Speech recognition | claude | TODO | |
-| T0-11 Hold-to-talk | claude | TODO | |
+| T0-08 Session state machine | claude | DONE | completed 2026-09-19T16:47:07Z; pnpm verify green (250 unit/dom/perf tests + 13 e2e), full state machine with persistence in chrome.storage.session, 15s watchdog, 3s transcribing timeout, 15s clarify timeout, cancellation on KEY_DOWN. |
+| T0-09 Mic permission | claude | DONE | completed 2026-09-19T16:47:07Z; pnpm verify green, tab-based permission grant flow in src/pages/permission.html, micGranted in storage.local, mic.html iframe fallback web-accessible, ensureMicPermission tested. |
+| T0-10 Speech recognition | claude | DONE | completed 2026-09-19T16:47:07Z; pnpm verify green, offscreen document host in src/offscreen/, Web Speech API SpeechRecognition lifecycle with fresh instance per utterance, interim/final results, error mapping per SPEC 10.5. |
+| T0-11 Hold-to-talk | claude | DONE | completed 2026-09-19T16:47:07Z; pnpm verify green, window capture keydown/keyup matching holdKey, editable target guard for input/textarea/select/contenteditable, listenStart/listenEnd tones, 250ms tap discard. |
 | T0-12 Options page | gemini | DONE | completed 2026-09-19T14:43:00Z; pnpm verify green, 8 unit/DOM tests passing, e2e options test passing (persists API key, no leaks, gate buttons functional), F-21 criteria fully met. |
 | T0-13 Gemini client | claude | TODO | |
-| T0-14 Action validation | claude | TODO | |
-| T0-15 Executor | claude | TODO | |
+| T0-14 Action validation | gemini | DONE | completed 2026-09-19T16:08:30Z; pnpm verify green, all 9 rules from 7.6.1 unit tested, 7.6.2 verb-role table enforced with batch abort. |
+| T0-15 Executor | gemini | DONE | completed 2026-09-19T16:08:30Z; pnpm verify green (199 Vitest + 13 Playwright e2e), all 7 verbs verified, bubbles: true on input/change, 12.8 re-resolution + 0.15 movement threshold, stale target batch abort, F-07 criteria fully met. |
 | T0-16 TTS service | claude | TODO | |
 | T0-17 Highlight overlay | gemini | DONE | completed 2026-09-19T14:47:00Z; pnpm verify green, 7 DOM tests passing, inline styles verified byte-identical before/during/after, F-09 criteria fully met. |
 | T0-18 Security tests | claude | TODO | not deferrable past the integration freeze |

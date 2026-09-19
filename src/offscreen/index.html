@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ECHO offscreen</title>
+  <!--
+    Offscreen document — SPEC §4.3, §6.3.
+    Reason: USER_MEDIA (owns MediaStream and SpeechRecognition lifecycle).
+    Created by the service worker via ensureOffscreen() in src/sw/mic.ts.
+    This page is never visible to the user.
+  -->
+  <script type="module" src="./index.ts"></script>
+</head>
+<body></body>
+</html>

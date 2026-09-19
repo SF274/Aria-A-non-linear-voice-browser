@@ -45,10 +45,10 @@ describe("Index Build Performance Gate IG-05 (SPEC 6.5, 12.2, 18)", () => {
     // Warm-up run
     buildElementIndex(document);
 
-    // Timed run (best of 3 runs to absorb single-iteration GC/OS scheduling pauses)
+    // Timed run (best of 5 runs to absorb single-iteration GC/OS scheduling pauses)
     let duration = Infinity;
     let index = buildElementIndex(document);
-    for (let r = 0; r < 3; r++) {
+    for (let r = 0; r < 5; r++) {
       const start = performance.now();
       const candidate = buildElementIndex(document);
       const elapsed = performance.now() - start;

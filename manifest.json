@@ -14,5 +14,12 @@
       "js": ["src/content/index.js"],
       "run_at": "document_idle"
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/pages/mic.html"],
+      "matches": ["<all_urls>"]
+    }
   ]
 }
+

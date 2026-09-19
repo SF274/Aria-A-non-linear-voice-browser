@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ECHO mic</title>
+  <script type="module" src="./mic.ts"></script>
+</head>
+<body>
+  <!-- Invisible iframe fallback for SpeechRecognition — SPEC §10.2 IG-02 fallback.
+       The content script injects this as:
+         <iframe src="chrome-extension://<id>/src/pages/mic.html" allow="microphone">
+       Speech recognition runs on the extension origin inside this iframe and
+       relays results back via chrome.runtime.sendMessage. -->
+</body>
+</html>
