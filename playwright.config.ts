@@ -8,10 +8,6 @@ export default defineConfig({
   retries: 0,
   reporter: "list",
   use: {
-    // Use the system-installed Chrome channel (SPEC 17.2) rather than
-    // Playwright's bundled Chromium, so no separate browser download is
-    // required on a machine that already has Chrome.
-    channel: "chrome",
     headless: true,
   },
 });

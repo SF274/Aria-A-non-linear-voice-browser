@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, type BuildOptions } from "vite";
 
 // This bundler is hand-rolled instead of using @crxjs/vite-plugin (SPEC/TASKS
 // T0-01 permits "an equivalent MV3 bundler"). Reason: @crxjs parses
@@ -8,15 +8,22 @@ import { defineConfig, type Plugin } from "vite";
 // point (service worker, content scripts, extension pages) to already
 // exist. This repository builds those entry points incrementally across
 // many later tasks, so a manifest-driven bundler would break on every
-// commit until the last entry point lands. See state/DECISIONS.md.
+// commit until the last entry point lands. See state/DECISIONS.md D-011.
+//
+// The actual multi-entry build is `scripts/build.ts`, run via `pnpm build`.
+// It runs one single-input Vite build per entry (see the comment on
+// ENTRY_OUTPUT for why) and imports the shared pieces below. This file's
+// own `export default` exists so editor/IDE tooling that expects a real
+// Vite config at the project root finds one; it is not on the `pnpm build`
+// path.
 
-const root = resolve(import.meta.dirname);
-const outDir = resolve(root, "dist");
+export const root = resolve(import.meta.dirname);
+export const outDir = resolve(root, "dist");
 
-// Fixed set of entry points named across SPEC 4 and TASKS.md. Only the ones
-// that exist on disk are bundled; this lets `pnpm build` succeed at every
-// point in the task graph, not just once every component exists.
-const CANDIDATE_ENTRIES: Record<string, string> = {
+/** Fixed set of entry points named across SPEC 4 and TASKS.md. Only the ones
+ * that exist on disk are bundled; this lets `pnpm build` succeed at every
+ * point in the task graph, not just once every component exists. */
+export const CANDIDATE_ENTRIES: Record<string, string> = {
   "src/sw/index": "src/sw/index.ts",
   "src/content/index": "src/content/index.ts",
   "src/offscreen/index": "src/offscreen/index.html",
@@ -25,7 +32,7 @@ const CANDIDATE_ENTRIES: Record<string, string> = {
   "src/pages/options": "src/pages/options.html",
 };
 
-function resolveEntries(): Record<string, string> {
+export function resolveEntries(): Record<string, string> {
   const entries: Record<string, string> = {};
   for (const [name, relPath] of Object.entries(CANDIDATE_ENTRIES)) {
     const abs = resolve(root, relPath);
@@ -34,61 +41,42 @@ function resolveEntries(): Record<string, string> {
   return entries;
 }
 
-const NOOP_ENTRY_ID = "virtual:echo-noop-entry";
-const NOOP_ENTRY_KEY = "__noop__";
+/**
+ * MV3 content scripts always run as classic (non-module) scripts — there is
+ * no "type": "module" option for content_scripts, unlike the service
+ * worker. A static ES `import` in a content-script bundle throws a
+ * SyntaxError the moment Chrome injects it. IIFE output disallows chunk
+ * splitting entirely (Rollup/rolldown reject a multi-entry IIFE build that
+ * would need a shared chunk), so every entry is built as its own
+ * single-input pass with no cross-entry shared chunk possible.
+ */
+export const ENTRY_OUTPUT: NonNullable<BuildOptions["rollupOptions"]>["output"] = {
+  format: "iife",
+  entryFileNames: "[name].js",
+  assetFileNames: "assets/[name]-[hash][extname]",
+};
 
-/** Rollup requires at least one input. Before any real entry point exists
- * (true only very early in the build), substitute a virtual empty module so
- * `vite build` still runs and still copies manifest.json. */
-function noopEntryPlugin(): Plugin {
-  return {
-    name: "echo-noop-entry",
-    resolveId(id) {
-      return id === NOOP_ENTRY_ID ? NOOP_ENTRY_ID : null;
-    },
-    load(id) {
-      return id === NOOP_ENTRY_ID ? "export {};\n" : null;
-    },
-  };
+/** Copies and JSON-validates the root manifest.json into dist/ after all
+ * entries are built. A malformed manifest fails the build loudly rather
+ * than shipping a broken extension. */
+export function copyManifest(): void {
+  const manifestPath = resolve(root, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error("manifest.json is missing at the project root.");
+  }
+  const raw = readFileSync(manifestPath, "utf-8");
+  JSON.parse(raw); // throws on malformed JSON
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(resolve(outDir, "manifest.json"), raw);
 }
-
-/** Copies and JSON-validates the root manifest.json into dist/ on every
- * build. A malformed manifest fails the build loudly rather than shipping a
- * broken extension. */
-function copyManifestPlugin(): Plugin {
-  return {
-    name: "echo-copy-manifest",
-    writeBundle() {
-      const manifestPath = resolve(root, "manifest.json");
-      if (!existsSync(manifestPath)) {
-        throw new Error("manifest.json is missing at the project root.");
-      }
-      const raw = readFileSync(manifestPath, "utf-8");
-      JSON.parse(raw); // throws on malformed JSON
-      mkdirSync(outDir, { recursive: true });
-      writeFileSync(resolve(outDir, "manifest.json"), raw);
-    },
-  };
-}
-
-const realEntries = resolveEntries();
-const input =
-  Object.keys(realEntries).length > 0 ? realEntries : { [NOOP_ENTRY_KEY]: NOOP_ENTRY_ID };
 
 export default defineConfig({
   root,
   build: {
     outDir,
-    emptyOutDir: true,
     target: "es2022",
     rollupOptions: {
-      input,
-      output: {
-        entryFileNames: "[name].js",
-        chunkFileNames: "chunks/[name]-[hash].js",
-        assetFileNames: "assets/[name]-[hash][extname]",
-      },
+      output: ENTRY_OUTPUT,
     },
   },
-  plugins: [noopEntryPlugin(), copyManifestPlugin()],
 });
