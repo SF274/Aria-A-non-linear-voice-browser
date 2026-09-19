@@ -10,11 +10,11 @@
 
 | Field | Value |
 | --- | --- |
-| `startedAt` | *(set on first session, ISO 8601)* |
+| `startedAt` | 2026-09-19T13:08:58Z |
 | Integration freeze | `startedAt` + planned duration − 12 h *(set explicitly once known)* |
 | Feature freeze | submission deadline − 3 h *(set explicitly once known)* |
 | Hard stop | submission deadline − 2 h *(set explicitly once known)* |
-| Current phase | `NOT_STARTED` |
+| Current phase | `T0` |
 | Last session ended | — |
 
 Phases: `NOT_STARTED` → `T0` → `T1` → `T2` → `STABILIZING` → `DEMO_READY`.
@@ -40,7 +40,7 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 ### Tier 0
 | Task | Owner | State | Note |
 | --- | --- | --- | --- |
-| T0-01 Repo scaffold | claude (solo) | TODO | start here |
+| T0-01 Repo scaffold | claude (solo) | IN_PROGRESS | claimed by claude, 2026-09-19T13:08:58Z |
 | T0-02 Shared contracts | claude (solo) | TODO | unblocks the most work |
 | T0-03 Manifest and shells | claude (solo) | TODO | |
 | T0-04 Demo page static | gemini | TODO | fixture for every other T0 test |

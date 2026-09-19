@@ -12,11 +12,11 @@
 
 | Field | Value | Status |
 | --- | --- | --- |
-| OS and version | — | UNVERIFIED |
+| OS and version | Windows 11 Home 10.0.26200 | VERIFIED |
 | Chrome channel | stable | ASSUMED |
-| Chrome version (`chrome://version`) | — | UNVERIFIED |
-| Node version | — | UNVERIFIED |
-| pnpm version | — | UNVERIFIED |
+| Chrome version (`chrome://version`) | 152.0.7977.83 (C:\Program Files (x86)\Google\Chrome\Application\chrome.exe) | VERIFIED |
+| Node version | v24.14.0 | VERIFIED |
+| pnpm version | 12.4.2 (installed via `npm install -g pnpm`; corepack's `pnpm@9` shim failed with EPERM writing to `C:\Program Files\nodejs\pnpm`) | VERIFIED |
 | Audio output for the demo | wired headphones | ASSUMED |
 | Second screen available for the telemetry panel | — | UNVERIFIED |
 
