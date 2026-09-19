@@ -23,7 +23,7 @@ Procedures for every gate are in `AGENT_RUNBOOK.md` section 4.
 | IG-04 | Playwright loads the MV3 extension, service worker reachable | all e2e | NOT_RUN | — |
 | IG-05 | Index build under 120 ms for 120 elements | F-04 | PASS | 2026-09-19T14:25:35Z |
 | IG-06 | Gemini model identifier valid, `responseSchema` honoured | F-06 | NOT_RUN | — |
-| IG-07 | Tier-one hit rate at least 12 of 20 | F-05 | NOT_RUN | — |
+| IG-07 | Tier-one hit rate at least 12 of 20 | F-05 | PASS | 2026-09-19T15:46:09Z |
 | IG-08 | Scan tone and highlight synchronized within 30 ms | F-10 | NOT_RUN | — |
 | IG-09 | Blackout overlay active, clicks still land, recording unaffected | primary demo | NOT_RUN | — |
 | IG-10 | Convex write succeeds from an MV3 service worker | F-18 | NOT_RUN | — |
@@ -48,6 +48,16 @@ Run in this order. The first three are the ones most likely to invalidate the pl
 ## Results
 
 *(append one block per run, newest first)*
+
+### IG-07 — tier-one hit rate
+- **Status:** PASS
+- **Date:** 2026-09-19T15:46:09Z
+- **Chrome:** Headless Chrome via Playwright & jsdom (vitest)
+- **Run by:** gemini
+- **Command:** `pnpm test:resolver`
+- **Result:** 16 of 20 scripted commands resolved CONFIDENT on tier one (80.0% >= 60.0% threshold). All named F-05 acceptance cases passed ("download the itinerary" returned AMBIGUOUS with exactly the two download buttons, "make me a sandwich" returned MISS, disabled elements never win).
+- **Blocks:** F-05 — now unblocked
+- **Fallback applied:** none needed
 
 ### IG-05 — index build performance
 - **Status:** PASS

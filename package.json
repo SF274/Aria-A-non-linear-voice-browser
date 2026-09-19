@@ -14,6 +14,7 @@
     "test:unit": "vitest run test/unit",
     "test:dom": "vitest run test/dom",
     "test:perf": "vitest run test/perf",
+    "test:resolver": "vitest run test/unit/resolver-local.spec.ts",
     "test": "vitest run test/unit test/dom test/perf",
     "test:e2e": "playwright test",
     "verify": "pnpm run build && pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run test:e2e",

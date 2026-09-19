@@ -25,7 +25,7 @@ Phases: `NOT_STARTED` → `T0` → `T1` → `T2` → `STABILIZING` → `DEMO_REA
 
 | Tier | Total | DONE | IN_PROGRESS | BLOCKED | TODO |
 | --- | --- | --- | --- | --- | --- |
-| T0 | 19 | 8 | 1 | 0 | 10 |
+| T0 | 19 | 9 | 0 | 0 | 10 |
 | T1 | 10 | 0 | 0 | 0 | 10 |
 | T2 | 4 | 0 | 0 | 0 | 4 |
 
@@ -46,7 +46,7 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | T0-04 Demo page static | gemini | DONE | completed 2026-09-19T13:49:30Z; pnpm verify green, all 7 e2e tests passing, axe-core reports 0 serious/critical violations, F-16a criteria fully met |
 | T0-05 Element index | claude | DONE | completed 2026-09-19T14:26:00Z; pnpm verify green, all 20 DOM tests and 4 observer tests pass, IG-05 PASS (80.77 ms / 22.53 KB for 120 elements; 16.30 ms on demo page), F-04 criteria fully met. |
 | T0-06 Normalization | claude | DONE | completed 2026-09-19T15:34:00Z; pnpm verify green, normalizeTranscript and cleanText covered by 31 tests in test/unit/normalize.spec.ts, F-05 normalization criterion passing. |
-| T0-07 Local resolver | gemini | IN_PROGRESS | claimed by gemini, 2026-09-19T15:35:00Z |
+| T0-07 Local resolver | gemini | DONE | completed 2026-09-19T15:47:32Z; pnpm verify green (167 Vitest + 10 Playwright e2e), IG-07 PASS (16/20 = 80.0%), F-05 criteria fully met (exact download ambiguity, sandwich miss, disabled elements never win). |
 | T0-08 Session state machine | claude | TODO | |
 | T0-09 Mic permission | claude | TODO | |
 | T0-10 Speech recognition | claude | TODO | |

@@ -1,0 +1,156 @@
+[
+  {
+    "id": "cmd-01",
+    "transcript": "click search flights",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Search flights",
+    "expectedVerb": "click",
+    "description": "Exact button click with click verb"
+  },
+  {
+    "id": "cmd-02",
+    "transcript": "press search flights",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Search flights",
+    "expectedVerb": "click",
+    "description": "Synonym verb 'press' mapped to click"
+  },
+  {
+    "id": "cmd-03",
+    "transcript": "click morning departures",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Morning departures",
+    "expectedVerb": "click",
+    "description": "Filter checkbox click"
+  },
+  {
+    "id": "cmd-04",
+    "transcript": "check non-stop only",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Non-stop only",
+    "expectedVerb": "check",
+    "description": "Filter checkbox with check verb"
+  },
+  {
+    "id": "cmd-05",
+    "transcript": "click help link",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Help",
+    "expectedVerb": "click",
+    "description": "Navigation link with role hint 'link'"
+  },
+  {
+    "id": "cmd-06",
+    "transcript": "go to check-in",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Check-in",
+    "expectedVerb": "click",
+    "description": "Navigation link with 'go to' verb"
+  },
+  {
+    "id": "cmd-07",
+    "transcript": "choose refundable fares",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Refundable fares",
+    "expectedVerb": "click",
+    "description": "Filter checkbox with 'choose' verb"
+  },
+  {
+    "id": "cmd-08",
+    "transcript": "click confirm booking button",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Confirm booking",
+    "expectedVerb": "click",
+    "description": "Booking button with role hint 'button'"
+  },
+  {
+    "id": "cmd-09",
+    "transcript": "focus on passenger name field",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Passenger name",
+    "expectedVerb": "focus",
+    "description": "Form input focus with role hint 'field'"
+  },
+  {
+    "id": "cmd-10",
+    "transcript": "type John Doe in passenger name",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Passenger name",
+    "expectedVerb": "fill",
+    "description": "Fill verb with value extraction using 'in'"
+  },
+  {
+    "id": "cmd-11",
+    "transcript": "enter user@example.com into email address",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Email address",
+    "expectedVerb": "fill",
+    "description": "Fill verb with value extraction using 'into'"
+  },
+  {
+    "id": "cmd-12",
+    "transcript": "select 9:40 flight",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Select 9:40 AM flight",
+    "expectedVerb": "click",
+    "description": "Flight selection with normalized number"
+  },
+  {
+    "id": "cmd-13",
+    "transcript": "book the 9:40 flight",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Select 9:40 AM flight",
+    "expectedVerb": "click",
+    "description": "Primary demo command: 'book the 9:40 flight'"
+  },
+  {
+    "id": "cmd-14",
+    "transcript": "select 6:15 am flight",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Select 6:15 AM flight",
+    "expectedVerb": "click",
+    "description": "Early morning flight selection"
+  },
+  {
+    "id": "cmd-15",
+    "transcript": "click use saved card ending 4417",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "Use saved card ending 4417",
+    "expectedVerb": "click",
+    "description": "Payment radio button click"
+  },
+  {
+    "id": "cmd-16",
+    "transcript": "check i accept the fare rules",
+    "expectedOutcome": "CONFIDENT",
+    "expectedTargetName": "I accept the fare rules",
+    "expectedVerb": "check",
+    "description": "Terms checkbox with check verb"
+  },
+  {
+    "id": "cmd-17",
+    "transcript": "download the itinerary",
+    "expectedOutcome": "AMBIGUOUS",
+    "expectedCandidates": ["Download", "Download"],
+    "description": "F-05 named ambiguous test case for PDF/Word download buttons"
+  },
+  {
+    "id": "cmd-18",
+    "transcript": "download",
+    "expectedOutcome": "AMBIGUOUS",
+    "expectedCandidates": ["Download", "Download"],
+    "description": "Short form command hitting both duplicate download buttons"
+  },
+  {
+    "id": "cmd-19",
+    "transcript": "make me a sandwich",
+    "expectedOutcome": "MISS",
+    "description": "F-05 named miss test case: unrelated command"
+  },
+  {
+    "id": "cmd-20",
+    "transcript": "order pizza for dinner",
+    "expectedOutcome": "MISS",
+    "description": "Unrelated command with zero relevance to flight page"
+  }
+]
