@@ -1,0 +1,11 @@
+/* ECHO — Visual Highlight Overlay Stylesheet (SPEC 9.9) */
+.echo-highlight {
+  outline: 3px solid #FFB020 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 6px rgba(255, 176, 32, 0.25) !important;
+  transition: none !important;
+}
+
+.echo-candidate {
+  outline-color: #3B82F6 !important;
+}
