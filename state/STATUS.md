@@ -88,8 +88,8 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 - T0-03: claimed by claude, 2026-09-19T13:40:53Z
 
 ## Blocked work
-
-*(none)*
+- T0-12: waiting on T0-03 (claude)
+- T0-17: waiting on T0-03 (claude)
 
 ---
 
