@@ -42,7 +42,7 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | --- | --- | --- | --- |
 | T0-01 Repo scaffold | claude (solo) | DONE | completed 2026-09-19T13:21:39Z; pnpm verify green. See N-001: F-01's full SPEC 16 criteria still need T0-02/T0-03. |
 | T0-02 Shared contracts | claude (solo) | DONE | completed 2026-09-19T13:38:06Z (built on Opus per AGENT_SPLIT.md 3); pnpm verify green, 101 new tests, all 24 SPEC 5 schemas covered. See DEV-001, N-005, N-006. |
-| T0-03 Manifest and shells | claude (solo) | TODO | |
+| T0-03 Manifest and shells | claude (solo) | IN_PROGRESS | claimed by claude, 2026-09-19T13:40:53Z |
 | T0-04 Demo page static | gemini | TODO | fixture for every other T0 test |
 | T0-05 Element index | claude | TODO | |
 | T0-06 Normalization | claude | TODO | |
