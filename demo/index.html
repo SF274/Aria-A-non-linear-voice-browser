@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Northbound Air</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header class="header">
+    <div class="nav-container">
+      <div class="brand-title">
+        <span>✈</span> Northbound Air
+      </div>
+      <nav aria-label="Main Navigation" class="main-nav">
+        <a href="#home">Home</a>
+        <a href="#flights">Flights</a>
+        <a href="#checkin">Check-in</a>
+        <a href="#help">Help</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="content-wrapper">
+    <div class="layout-grid">
+      <!-- Sidebar Filters (SPEC 15.4) -->
+      <aside class="sidebar" aria-label="Flight filters">
+        <h2>Filters</h2>
+        <div class="filter-group">
+          <input type="checkbox" id="f-morning" name="filter-morning" />
+          <label for="f-morning">Morning departures</label>
+        </div>
+        <div class="filter-group">
+          <input type="checkbox" id="f-nonstop" name="filter-nonstop" />
+          <label for="f-nonstop">Non-stop only</label>
+        </div>
+        <div class="filter-group">
+          <input type="checkbox" id="f-refundable" name="filter-refundable" />
+          <label for="f-refundable">Refundable fares</label>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main id="main-content" class="main-content">
+        <h1 class="page-heading">Northbound Air Flight Booking</h1>
+
+        <!-- Search Bar (SPEC 15.5) -->
+        <section class="search-section" aria-labelledby="search-heading">
+          <h2 id="search-heading">Search Flights</h2>
+          <form class="search-form" onsubmit="return false;">
+            <div class="field-group">
+              <label for="from">From</label>
+              <input type="text" id="from" name="from" placeholder="Departure city" value="Seattle (SEA)" />
+            </div>
+            <div class="field-group">
+              <label for="to">To</label>
+              <input type="text" id="to" name="to" placeholder="Destination city" value="Waterloo (YKF)" />
+            </div>
+            <div class="field-group">
+              <label for="date">Departure date</label>
+              <input type="text" id="date" name="date" placeholder="YYYY-MM-DD" value="2026-10-15" />
+            </div>
+            <button type="button" id="search-btn" class="btn btn-primary">Search flights</button>
+          </form>
+        </section>
+
+        <!-- Results (SPEC 15.6) -->
+        <section class="results-section" aria-labelledby="results-heading" aria-live="polite" id="results">
+          <h2 id="results-heading">Available Flights</h2>
+          <div class="flight-cards-list">
+            <!-- Card 1 -->
+            <div class="flight-card" id="flight-card-1">
+              <div class="flight-info">
+                <span class="flight-airline">Northbound</span>
+                <span class="flight-route">Flight NB 101</span>
+                <span class="flight-time">6:15 AM – 8:45 AM</span>
+                <span class="flight-price">$240</span>
+              </div>
+              <button type="button" id="select-flight-1" class="btn btn-select">Select 6:15 AM flight</button>
+            </div>
+
+            <!-- Card 2 (Target of primary demo command) -->
+            <div class="flight-card" id="flight-card-2">
+              <div class="flight-info">
+                <span class="flight-airline">Northbound</span>
+                <span class="flight-route">Flight NB 204</span>
+                <span class="flight-time">9:40 AM – 12:10 PM</span>
+                <span class="flight-price">$290</span>
+              </div>
+              <button type="button" id="select-flight-2" class="btn btn-select">Select 9:40 AM flight</button>
+            </div>
+
+            <!-- Card 3 -->
+            <div class="flight-card" id="flight-card-3">
+              <div class="flight-info">
+                <span class="flight-airline">Northbound</span>
+                <span class="flight-route">Flight NB 312</span>
+                <span class="flight-time">1:05 PM – 4:30 PM</span>
+                <span class="flight-price">$195</span>
+              </div>
+              <button type="button" id="select-flight-3" class="btn btn-select">Select 1:05 PM flight</button>
+            </div>
+
+            <!-- Card 4 -->
+            <div class="flight-card" id="flight-card-4">
+              <div class="flight-info">
+                <span class="flight-airline">Northbound</span>
+                <span class="flight-route">Flight NB 418</span>
+                <span class="flight-time">4:30 PM – 7:00 PM</span>
+                <span class="flight-price">$310</span>
+              </div>
+              <button type="button" id="select-flight-4" class="btn btn-select">Select 4:30 PM flight</button>
+            </div>
+
+            <!-- Card 5 -->
+            <div class="flight-card" id="flight-card-5">
+              <div class="flight-info">
+                <span class="flight-airline">Northbound</span>
+                <span class="flight-route">Flight NB 520</span>
+                <span class="flight-time">8:55 PM – 11:50 PM</span>
+                <span class="flight-price">$180</span>
+              </div>
+              <button type="button" id="select-flight-5" class="btn btn-select">Select 8:55 PM flight</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Booking Form (SPEC 15.7) -->
+        <section class="booking-section" aria-labelledby="booking-heading">
+          <h2 id="booking-heading">Passenger & Booking Details</h2>
+          <form id="booking-form" class="booking-form" onsubmit="return false;">
+            <div class="form-row">
+              <div class="field-group">
+                <label for="bk-name">Passenger name</label>
+                <input type="text" id="bk-name" name="passengerName" autocomplete="name" />
+              </div>
+              <div class="field-group">
+                <label for="bk-email">Email address</label>
+                <input type="email" id="bk-email" name="email" autocomplete="email" />
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label for="bk-seat">Seat preference</label>
+              <select id="bk-seat" name="seatPreference">
+                <option value="window">Window</option>
+                <option value="aisle">Aisle</option>
+                <option value="none">No preference</option>
+              </select>
+            </div>
+
+            <fieldset class="payment-fieldset">
+              <legend>Payment details</legend>
+              <div class="radio-group">
+                <input type="radio" id="bk-card-saved" name="pay" value="saved" checked />
+                <label for="bk-card-saved">Use saved card ending 4417</label>
+              </div>
+              <div class="radio-group">
+                <input type="radio" id="bk-card-new" name="pay" value="new" />
+                <label for="bk-card-new">Use a new card</label>
+              </div>
+            </fieldset>
+
+            <div class="checkbox-group">
+              <input type="checkbox" id="bk-terms" name="terms" />
+              <label for="bk-terms">I accept the fare rules</label>
+            </div>
+
+            <button type="button" id="bk-confirm" class="btn btn-confirm">Confirm booking</button>
+
+            <div id="booking-confirmation" class="booking-confirmation" hidden>
+              <h3>Booking confirmed</h3>
+              <p>Confirmation reference: <strong id="booking-ref">NB-782419</strong></p>
+            </div>
+          </form>
+        </section>
+      </main>
+
+      <!-- Promo Panel (SPEC 15.10) -->
+      <aside class="promo-panel" aria-label="Special promotions">
+        <h2>Summer sale</h2>
+        <video muted autoplay loop playsinline aria-label="Promotional video for summer destinations" width="240" height="135" class="promo-video">
+          <source src="data:video/mp4;base64,AAAAHGZ0eXBtcDQyAAAAAG1wNDJpc29tYXZjMQAAADpmcmVlAAAAG21kYXQAAAGzAAEA" type="video/mp4" />
+          <track kind="captions" src="data:text/vtt,WEBVTT" default />
+        </video>
+        <p>Fly north this summer with 25% off all regional routes. Limited time offer.</p>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Footer (SPEC 15.9) -->
+  <footer class="footer">
+    <div class="footer-content">
+      <p>© 2026 Northbound Air. All rights reserved.</p>
+      <div class="download-actions">
+        <button id="dl-pdf" aria-label="Download">Download itinerary (PDF)</button>
+        <button id="dl-word" aria-label="Download">Download itinerary (Word)</button>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

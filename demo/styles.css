@@ -1,0 +1,516 @@
+/* Northbound Air - Demo Page Stylesheet */
+:root {
+  --color-primary: #0369a1;
+  --color-primary-dark: #0c4a6e;
+  --color-primary-light: #e0f2fe;
+  --color-text: #0f172a;
+  --color-text-muted: #475569;
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-border: #cbd5e1;
+  --color-border-dark: #94a3b8;
+  --color-success: #15803d;
+  --color-focus: #2563eb;
+  --font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Skip Link for accessibility */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--color-focus);
+  color: #ffffff;
+  padding: 8px 16px;
+  z-index: 1000;
+  text-decoration: none;
+  font-weight: 600;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* Header & Navigation (SPEC 15.3: y≈0.04, x spread 0.05→0.45) */
+.header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: 12px 24px;
+}
+
+.nav-container {
+  display: flex;
+  align-items: center;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.brand-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  margin-right: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.main-nav {
+  display: flex;
+  gap: 20px;
+}
+
+.main-nav a {
+  color: var(--color-text);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  padding: 6px 12px;
+  border-radius: 4px;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.main-nav a:hover,
+.main-nav a:focus {
+  background-color: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+/* Layout Grid (Asymmetric layout per SPEC 15.2) */
+.content-wrapper {
+  flex: 1;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 20px;
+}
+
+.layout-grid {
+  display: grid;
+  grid-template-columns: 220px 1fr 260px;
+  gap: 24px;
+  align-items: start;
+}
+
+/* Sidebar Filters (SPEC 15.4: x≈0.08, y 0.22→0.40) */
+.sidebar {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 8px;
+}
+
+.sidebar h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.filter-group input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.filter-group label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+/* Main Content Area */
+.main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.page-heading {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+/* Search Bar (SPEC 15.5: y≈0.30) */
+.search-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.search-section h2 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.search-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 14px;
+  align-items: end;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-group label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.field-group input[type="text"],
+.field-group input[type="email"],
+.field-group select {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-dark);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  color: var(--color-text);
+  background-color: var(--color-surface);
+  width: 100%;
+}
+
+.field-group input:focus,
+.field-group select:focus {
+  border-color: var(--color-focus);
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s, transform 0.05s;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:focus {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-primary-dark);
+}
+
+.btn-select {
+  background-color: #0369a1;
+  color: #ffffff;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.btn-select:hover {
+  background-color: #075985;
+}
+
+.btn-confirm {
+  background-color: var(--color-success);
+  color: #ffffff;
+  padding: 12px 24px;
+  font-size: 1rem;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.btn-confirm:hover {
+  background-color: #166534;
+}
+
+/* Results (SPEC 15.6: 5 cards, x≈0.50, y 0.42→0.62) */
+.results-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.results-section h2 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.flight-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.flight-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background-color: var(--color-surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.flight-card:hover {
+  border-color: var(--color-border-dark);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.flight-info {
+  display: grid;
+  grid-template-columns: 120px 140px 160px 80px;
+  align-items: center;
+  gap: 16px;
+}
+
+.flight-airline {
+  font-weight: 600;
+  color: var(--color-text);
+  font-size: 0.95rem;
+}
+
+.flight-route {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.flight-time {
+  font-weight: 600;
+  color: var(--color-text);
+  font-size: 0.95rem;
+}
+
+.flight-price {
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  font-size: 1.1rem;
+}
+
+/* Booking Form (SPEC 15.7: x≈0.45, y 0.68→0.88) */
+.booking-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 24px;
+}
+
+.booking-section h2 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 10px;
+}
+
+.booking-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.payment-fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-top: 4px;
+}
+
+.payment-fieldset legend {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  padding: 0 6px;
+}
+
+.radio-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.radio-group:last-child {
+  margin-bottom: 0;
+}
+
+.radio-group input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.radio-group label {
+  font-size: 0.9rem;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.checkbox-group label {
+  font-size: 0.9rem;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.booking-confirmation {
+  background-color: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 6px;
+  padding: 16px;
+  text-align: center;
+}
+
+.booking-confirmation h3 {
+  color: var(--color-success);
+  font-size: 1.2rem;
+  margin-bottom: 6px;
+}
+
+/* Promo Panel (SPEC 15.10: y≈0.30, x≈0.90) */
+.promo-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 8px;
+}
+
+.promo-panel h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--color-text);
+}
+
+.promo-video {
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  background-color: #000000;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.promo-panel p {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+/* Footer (SPEC 15.9: y≈0.95, [Download] [Download]) */
+.footer {
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  padding: 24px;
+  margin-top: auto;
+}
+
+.footer-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.footer-content p {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.download-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.download-actions button {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border-dark);
+  color: var(--color-text);
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.download-actions button:hover {
+  background-color: var(--color-bg);
+  border-color: var(--color-text-muted);
+}
+
+.download-actions button:focus {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}

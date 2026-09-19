@@ -108,3 +108,21 @@ These were made before the build started. They are recorded here because the rea
 - **Why:** `pnpm build` must stay green after every task in the graph, not just the last one touching `manifest.json`. The hand-rolled version is roughly 60 lines, has zero new runtime dependencies, and gives exact control over the permission set in SPEC 8.7 and the CSP in 8.8, which later security work in T0-03/T0-18 will exercise directly.
 - **Revisit if:** the candidate-entry map in `vite.config.ts` needs to grow beyond the fixed list already named in SPEC 4 (a new extension page type appears). Add the new relative path to `CANDIDATE_ENTRIES`; no other change needed.
 - **SPEC:** 4, 8.7, 8.8; TASKS.md T0-01
+
+### D-012 — @axe-core/playwright for demo page accessibility testing
+- **Date:** 2026-09-19
+- **Context:** SPEC 17.1 and TASKS.md T0-04 mandate axe-core accessibility auditing via Playwright for `test/e2e/demo-a11y.spec.ts` (zero serious/critical violations).
+- **Options:** (1) `@axe-core/playwright` devDependency; (2) inject vendored or CDN axe-core bundle in page fixture.
+- **Chosen:** option 1 (`@axe-core/playwright`).
+- **Why:** official Deque Playwright wrapper, works offline with no runtime/network dependencies, zero production bundle impact (devDependency only), satisfies SPEC 17.1 directly. Option 2 introduces ad-hoc script injection and maintenance overhead.
+- **Revisit if:** never.
+- **SPEC:** 17.1, F-16a; TASKS.md T0-04
+
+### D-013 — `tsx` to run `scripts/build.ts`, instead of Node's native TS stripping
+- **Date:** 2026-09-19
+- **Context:** T0-03 uncovered a real bug in T0-01's build pipeline: a multi-entry `vite build` with IIFE output fails outright once two entries (service worker, content script) share an imported module (`src/shared/contracts.ts`) — Rollup/rolldown refuse cross-entry chunk splitting under IIFE. The fix is one single-input Vite build per entry, orchestrated by a small script (`scripts/build.ts`) that Node must run directly. Node 24 (this machine's verified version) runs `.ts` files with no flags via its built-in type-stripping, but that capability is still labeled experimental and was unflagged only in recent Node versions — `state/ENVIRONMENT.md`'s stated minimum is Node 20 LTS.
+- **Options:** (1) rely on Node's native TS execution, silently raising the effective minimum Node version past what `ENVIRONMENT.md`/SPEC's tooling table states; (2) add `tsx` (a well-established TS-execution CLI, Node ≥18) as a devDependency and run the script through it.
+- **Chosen:** option 2.
+- **Why:** the documented Node 20 LTS floor stays true without an undocumented dependency on an experimental native feature whose exact version cutoff this session could not verify with certainty. `tsx` is one new devDependency, recorded here per R1.4.
+- **Revisit if:** never, unless `tsx` itself becomes a build-reliability problem (it hasn't).
+- **SPEC:** extends SPEC 17.1 (tooling); TASKS.md T0-01, T0-03
