@@ -25,7 +25,7 @@ Phases: `NOT_STARTED` → `T0` → `T1` → `T2` → `STABILIZING` → `DEMO_REA
 
 | Tier | Total | DONE | IN_PROGRESS | BLOCKED | TODO |
 | --- | --- | --- | --- | --- | --- |
-| T0 | 19 | 6 | 0 | 0 | 13 |
+| T0 | 19 | 6 | 1 | 0 | 12 |
 | T1 | 10 | 0 | 0 | 0 | 10 |
 | T2 | 4 | 0 | 0 | 0 | 4 |
 
@@ -56,7 +56,7 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | T0-14 Action validation | claude | TODO | |
 | T0-15 Executor | claude | TODO | |
 | T0-16 TTS service | claude | TODO | |
-| T0-17 Highlight overlay | gemini | TODO | |
+| T0-17 Highlight overlay | gemini | IN_PROGRESS | claimed by gemini, 2026-09-19T14:43:30Z |
 | T0-18 Security tests | claude | TODO | not deferrable past the integration freeze |
 | T0-19 Chain harness | claude | TODO | |
 
