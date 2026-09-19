@@ -30,21 +30,6 @@ body {
   flex-direction: column;
 }
 
-/* Skip Link for accessibility */
-.skip-link {
-  position: absolute;
-  top: -40px;
-  left: 0;
-  background: var(--color-focus);
-  color: #ffffff;
-  padding: 8px 16px;
-  z-index: 1000;
-  text-decoration: none;
-  font-weight: 600;
-}
-.skip-link:focus {
-  top: 0;
-}
 
 /* Header & Navigation (SPEC 15.3: y≈0.04, x spread 0.05→0.45) */
 .header {

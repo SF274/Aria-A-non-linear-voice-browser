@@ -25,7 +25,7 @@ Phases: `NOT_STARTED` → `T0` → `T1` → `T2` → `STABILIZING` → `DEMO_REA
 
 | Tier | Total | DONE | IN_PROGRESS | BLOCKED | TODO |
 | --- | --- | --- | --- | --- | --- |
-| T0 | 19 | 4 | 0 | 0 | 15 |
+| T0 | 19 | 4 | 1 | 0 | 14 |
 | T1 | 10 | 0 | 0 | 0 | 10 |
 | T2 | 4 | 0 | 0 | 0 | 4 |
 
@@ -44,7 +44,7 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | T0-02 Shared contracts | claude (solo) | DONE | completed 2026-09-19T13:38:06Z (built on Opus per AGENT_SPLIT.md 3); pnpm verify green, 101 new tests, all 24 SPEC 5 schemas covered. See DEV-001, N-005, N-006. |
 | T0-03 Manifest and shells | claude (solo) | DONE | completed 2026-09-19T14:04:00Z; pnpm verify green, extension loads with zero console errors, content script announces readiness on demo page, F-01 criteria fully met. See N-008. |
 | T0-04 Demo page static | gemini | DONE | completed 2026-09-19T13:49:30Z; pnpm verify green, all 7 e2e tests passing, axe-core reports 0 serious/critical violations, F-16a criteria fully met |
-| T0-05 Element index | claude | TODO | |
+| T0-05 Element index | claude | IN_PROGRESS | claimed by claude, 2026-09-19T14:15:00Z |
 | T0-06 Normalization | claude | TODO | |
 | T0-07 Local resolver | claude | TODO | |
 | T0-08 Session state machine | claude | TODO | |
