@@ -6,7 +6,11 @@ export default defineConfig({
     // harmless) and test/dom (SPEC 17.1 requires jsdom) without needing
     // per-directory environment switching.
     environment: "jsdom",
-    include: ["test/unit/**/*.spec.ts", "test/dom/**/*.spec.ts"],
+    include: [
+      "test/unit/**/*.spec.ts",
+      "test/dom/**/*.spec.ts",
+      "test/perf/**/*.spec.ts",
+    ],
     passWithNoTests: false,
   },
 });

@@ -21,7 +21,7 @@ Procedures for every gate are in `AGENT_RUNBOOK.md` section 4.
 | IG-02 | `SpeechRecognition` starts in the offscreen document after the tab grant | F-02, F-03 | NOT_RUN | — |
 | IG-03 | `chrome.tts` speaks a chunked 60 s passage to completion | F-08 | NOT_RUN | — |
 | IG-04 | Playwright loads the MV3 extension, service worker reachable | all e2e | NOT_RUN | — |
-| IG-05 | Index build under 120 ms for 120 elements | F-04 | NOT_RUN | — |
+| IG-05 | Index build under 120 ms for 120 elements | F-04 | PASS | 2026-09-19T14:25:35Z |
 | IG-06 | Gemini model identifier valid, `responseSchema` honoured | F-06 | NOT_RUN | — |
 | IG-07 | Tier-one hit rate at least 12 of 20 | F-05 | NOT_RUN | — |
 | IG-08 | Scan tone and highlight synchronized within 30 ms | F-10 | NOT_RUN | — |
@@ -48,6 +48,16 @@ Run in this order. The first three are the ones most likely to invalidate the pl
 ## Results
 
 *(append one block per run, newest first)*
+
+### IG-05 — index build performance
+- **Status:** PASS
+- **Date:** 2026-09-19T14:25:35Z
+- **Chrome:** Headless Chrome via Playwright & jsdom (vitest)
+- **Run by:** claude
+- **Command:** `pnpm test:perf`
+- **Result:** Built 120-element synthetic DOM in 80.77 ms (<120 ms threshold). Serialized JSON size: 22.53 KB (<24 KB limit). On demo page: 25 controls built in 16.30 ms, serialized size 5.47 KB.
+- **Blocks:** F-04 — now unblocked
+- **Fallback applied:** none needed
 
 ```
 ### IG-nn — <name>
