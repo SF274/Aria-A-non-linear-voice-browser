@@ -93,4 +93,11 @@ At the end of every working session, before context is lost, write here anything
 - **Observation:** In Playwright persistent-context tests, navigating to an extension page (`chrome-extension://${extId}/src/pages/options.html`) requires the extension ID. The extension service worker registers and awakens reliably upon initial page navigation (e.g. `await page.goto(server.url)`), allowing safe resolution of `extId` via `ctx.serviceWorkers()`. Gate runner functions output standard copy-pasteable markdown blocks per `state/INTEGRATION_GATES.md` specification. E2E test asserts the API key string is never rendered or leaked to any other page's DOM or storage.
 - **Relevance:** T0-13 (Gemini client and resolver) is unblocked on the options page requirement. `options.spec.ts` passes consistently in <4s without flakes.
 
+### N-011 — Gemini T0 task queue is fully completed
+- **Date:** 2026-09-19
+- **Context:** `AGENT_SPLIT.md` section 3 assigns `T0-04`, `T0-12`, and `T0-17` to `gemini`. All three tasks are now `DONE` with all acceptance criteria in `SPEC.md` section 16 passing, verified via `pnpm verify` (155 unit/DOM tests, 10 e2e tests passing).
+- **Observation:** Under `AGENT_RULES.md` R7.1, T1 tasks (`T1-01`, `T1-06`, `T1-07`, `T1-08`) cannot be started while T0 tasks remain `TODO`. Under `AGENT_SPLIT.md` section 4 step 9, when an agent's unblocked tasks are complete, it records what it is waiting on and stops without inventing work or taking tasks from the other agent's list.
+- **Relevance:** If operating strictly under `AGENT_SPLIT.md`, `gemini` is waiting on `claude` to complete the remaining T0 foundation tasks (`T0-06` through `T0-11`, `T0-13` through `T0-16`, `T0-18`, `T0-19`). If operating in solo/primary autonomous agent mode (per user directives), the agent should proceed along the critical path to `T0-06` / `T0-07`.
+
+
 
