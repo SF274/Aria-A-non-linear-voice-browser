@@ -1,0 +1,6 @@
+{
+  "manifest_version": 3,
+  "name": "ECHO — voice browser",
+  "version": "0.1.0",
+  "description": "Operate any web page by voice, with the screen off."
+}

@@ -99,3 +99,12 @@ These were made before the build started. They are recorded here because the rea
 - **Why:** the person-hour arithmetic did not support finishing T0+T1 as fully specified inside one day, and a spec that quietly overpromises its own timeline is worse than one that names the gap.
 - **Revisit if:** never without re-summing TASKS.md first. Any future edit to a per-task `Est` value must be reflected in both the tier heading in SPEC 2.2 and the table in SPEC 19.1.
 - **SPEC:** 2.2, 19.1, 19.1a
+
+### D-011 — Hand-rolled MV3 bundler instead of `@crxjs/vite-plugin`
+- **Date:** 2026-09-19
+- **Context:** T0-01 names `@crxjs/vite-plugin` "or an equivalent MV3 bundler." `@crxjs/vite-plugin` parses `manifest.json` at config-load time and expects every referenced entry point (service worker, content scripts, extension pages) to already exist on disk. This repository's entry points land incrementally across T0-01, T0-03, T0-09, T0-12, T0-17 and others; a manifest-driven bundler would break `pnpm build` on every commit until the very last entry point is written, which fails R1.4/reliability in exactly the way SPEC 1.8 warns against.
+- **Options:** (1) `@crxjs/vite-plugin`, accept the build breaking until every entry exists; (2) hand-rolled Vite config: a fixed candidate-entry map filtered to files that exist, plus a plugin that copies and JSON-validates the root `manifest.json` into `dist/`.
+- **Chosen:** option 2, in `vite.config.ts`.
+- **Why:** `pnpm build` must stay green after every task in the graph, not just the last one touching `manifest.json`. The hand-rolled version is roughly 60 lines, has zero new runtime dependencies, and gives exact control over the permission set in SPEC 8.7 and the CSP in 8.8, which later security work in T0-03/T0-18 will exercise directly.
+- **Revisit if:** the candidate-entry map in `vite.config.ts` needs to grow beyond the fixed list already named in SPEC 4 (a new extension page type appears). Add the new relative path to `CANDIDATE_ENTRIES`; no other change needed.
+- **SPEC:** 4, 8.7, 8.8; TASKS.md T0-01
