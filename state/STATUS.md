@@ -25,7 +25,7 @@ Phases: `NOT_STARTED` → `T0` → `T1` → `T2` → `STABILIZING` → `DEMO_REA
 
 | Tier | Total | DONE | IN_PROGRESS | BLOCKED | TODO |
 | --- | --- | --- | --- | --- | --- |
-| T0 | 19 | 5 | 1 | 0 | 13 |
+| T0 | 19 | 6 | 0 | 0 | 13 |
 | T1 | 10 | 0 | 0 | 0 | 10 |
 | T2 | 4 | 0 | 0 | 0 | 4 |
 
@@ -51,7 +51,7 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | T0-09 Mic permission | claude | TODO | |
 | T0-10 Speech recognition | claude | TODO | |
 | T0-11 Hold-to-talk | claude | TODO | |
-| T0-12 Options page | gemini | IN_PROGRESS | claimed by gemini, 2026-09-19T14:27:30Z |
+| T0-12 Options page | gemini | DONE | completed 2026-09-19T14:43:00Z; pnpm verify green, 8 unit/DOM tests passing, e2e options test passing (persists API key, no leaks, gate buttons functional), F-21 criteria fully met. |
 | T0-13 Gemini client | claude | TODO | |
 | T0-14 Action validation | claude | TODO | |
 | T0-15 Executor | claude | TODO | |

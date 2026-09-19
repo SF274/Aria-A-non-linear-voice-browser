@@ -87,3 +87,10 @@ At the end of every working session, before context is lost, write here anything
 - **Observation:** `T0-04` (demo page static structure and accessibility suite) is `DONE` with `pnpm verify` fully green (107 unit tests, 7 e2e tests passing, axe-core 0 serious/critical violations). Gemini's remaining Tier 0 tasks are `T0-12` (minimal options page, depends on T0-02 and T0-03) and `T0-17` (highlight overlay, depends on T0-03). Both are blocked on `T0-03` (manifest and shells, currently in progress by `claude`). Per `AGENT_RULES.md` R7.1, T1 tasks cannot be started while T0 tasks remain TODO/BLOCKED.
 - **Relevance:** Pausing execution here per `AGENT_SPLIT.md` section 4 step 9. Once `claude` completes `T0-03` and marks it `DONE` in `state/STATUS.md`, `gemini` can immediately proceed with `T0-12` and `T0-17`.
 
+### N-010 — Options page (T0-12) implementation and Playwright extension test flow
+- **Date:** 2026-09-19
+- **Context:** T0-12 implements the minimal options page (`src/pages/options.html`, `src/pages/options.ts`, F-21) providing API key entry, Gemini model override, verbosity selector, STT mode display, offline STT model installer, and integration gate runners (IG-01, IG-03, IG-06, IG-10).
+- **Observation:** In Playwright persistent-context tests, navigating to an extension page (`chrome-extension://${extId}/src/pages/options.html`) requires the extension ID. The extension service worker registers and awakens reliably upon initial page navigation (e.g. `await page.goto(server.url)`), allowing safe resolution of `extId` via `ctx.serviceWorkers()`. Gate runner functions output standard copy-pasteable markdown blocks per `state/INTEGRATION_GATES.md` specification. E2E test asserts the API key string is never rendered or leaked to any other page's DOM or storage.
+- **Relevance:** T0-13 (Gemini client and resolver) is unblocked on the options page requirement. `options.spec.ts` passes consistently in <4s without flakes.
+
+
