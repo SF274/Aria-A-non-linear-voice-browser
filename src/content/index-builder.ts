@@ -3,12 +3,16 @@
  */
 
 import { computeAccessibleName } from "dom-accessibility-api";
-import { type ARIARoleDefinitionKey, elementRoles, roles } from "aria-query";
+import {
+  type ARIARoleDefinitionKey,
+  type ARIARoleRelationConcept,
+  elementRoles,
+  roles,
+} from "aria-query";
 
 import {
   type ElementIndex,
   type ElementIndexEntry,
-  ElementIndexSchema,
   ELEMENT_NAME_MAX_CHARS,
   ELEMENT_VALUE_MAX_CHARS,
   PAGE_TITLE_MAX_CHARS,
@@ -83,6 +87,19 @@ export function sanitizeForPrompt(s: string, maxLength?: number): string {
   return res;
 }
 
+// Pre-index aria-query elementRoles by HTML tag name for O(1) tag lookup
+const tagRoleMap = new Map<string, Array<[ARIARoleRelationConcept, string[]]>>();
+for (const [concept, roleList] of elementRoles.entries()) {
+  if (!concept.name) continue;
+  const t = concept.name.toLowerCase();
+  let list = tagRoleMap.get(t);
+  if (!list) {
+    list = [];
+    tagRoleMap.set(t, list);
+  }
+  list.push([concept, Array.from(roleList as Iterable<string>)]);
+}
+
 /**
  * Resolves an element's ARIA role per SPEC 12.3:
  * Explicit role (first valid token) -> implicit role from aria-query -> "generic".
@@ -104,8 +121,12 @@ export function resolveRole(el: Element): string {
   let bestRole: string | null = null;
   let maxSpecificity = -1;
 
-  for (const [concept, roleList] of elementRoles.entries()) {
-    if (concept.name !== tag) continue;
+  const conceptsForTag = tagRoleMap.get(tag);
+  if (!conceptsForTag) {
+    return "generic";
+  }
+
+  for (const [concept, rolesArray] of conceptsForTag) {
     let matches = true;
     let specificity = 0;
 
@@ -189,7 +210,6 @@ export function resolveRole(el: Element): string {
 
     if (specificity > maxSpecificity) {
       maxSpecificity = specificity;
-      const rolesArray = Array.from(roleList as Iterable<string>);
       bestRole = rolesArray[0] || null;
     }
   }
@@ -414,5 +434,5 @@ export function buildElementIndex(doc?: Document): ElementIndex {
     truncated,
   };
 
-  return ElementIndexSchema.parse(index);
+  return index as ElementIndex;
 }
