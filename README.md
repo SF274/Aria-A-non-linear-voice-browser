@@ -1,4 +1,4 @@
-# ECHO — voice browser
+# Aria - A non-linear voice browser
 
 A Chrome extension that lets someone operate any web page by voice, with the screen off.
 
