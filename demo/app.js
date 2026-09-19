@@ -4,7 +4,11 @@
  */
 
 // Constant required by SPEC 15.5 for test reasoning and mutation sonification timing.
-export const RESULTS_DELAY_MS = 800;
+// This file is loaded as a classic <script>; an `export` here is a SyntaxError that
+// stops every handler below from ever being attached, so the constant is exposed on
+// `window` instead.
+const RESULTS_DELAY_MS = 800;
+window.RESULTS_DELAY_MS = RESULTS_DELAY_MS;
 
 document.addEventListener("DOMContentLoaded", () => {
   // 1. Download buttons (SPEC 15.9)

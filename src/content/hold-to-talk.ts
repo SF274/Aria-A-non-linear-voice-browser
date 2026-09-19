@@ -23,28 +23,43 @@ import { resumeAudioContext, playListenStart, playListenEnd } from "./audio-stub
 // Settings
 // ---------------------------------------------------------------------------
 
-/** Default hold key (SPEC §5.13). Loaded from storage; falls back to "Space". */
+/** Default hold key (SPEC §5.13). Loaded from settings; falls back to "Space". */
 let holdKey = "Space";
 
-/** Load the hold key from storage once on init. Stays live via storage listener. */
-async function loadSettings(): Promise<void> {
+/** Accept only a non-empty string: a corrupt or partial settings object keeps the current key. */
+function pickHoldKey(settings: unknown): string | null {
+  if (typeof settings !== "object" || settings === null) return null;
+  const key = (settings as { holdKey?: unknown }).holdKey;
+  return typeof key === "string" && key.length > 0 ? key : null;
+}
+
+/**
+ * Load the hold key once on init. The options page saves the whole Settings
+ * object under the single `settings` key (SPEC 5.13), so the key lives at
+ * `settings.holdKey`, not at a top-level `holdKey` entry.
+ */
+export async function loadSettings(): Promise<void> {
   try {
-    const result = await chrome.storage.local.get("holdKey");
-    if (typeof result.holdKey === "string" && result.holdKey.length > 0) {
-      holdKey = result.holdKey;
-    }
+    const result = await chrome.storage.local.get("settings");
+    const key = pickHoldKey(result?.settings);
+    if (key) holdKey = key;
   } catch {
     // storage unavailable in some test contexts; use default
   }
 }
 
-// Keep the hold key in sync with settings changes.
+/** Keep the hold key live when the options page saves new settings. */
+export function handleStorageChange(
+  changes: Record<string, { newValue?: unknown }>,
+  areaName?: string
+): void {
+  if (areaName !== undefined && areaName !== "local") return;
+  const key = pickHoldKey(changes.settings?.newValue);
+  if (key) holdKey = key;
+}
+
 if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
-  chrome.storage.onChanged.addListener((changes) => {
-    if (changes.holdKey?.newValue) {
-      holdKey = changes.holdKey.newValue as string;
-    }
-  });
+  chrome.storage.onChanged.addListener(handleStorageChange);
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +108,10 @@ function onKeyDown(event: KeyboardEvent): void {
   if (isEditableTarget(event.target)) return;
   // Prevent the browser default for the hold key (e.g. scroll on Space).
   event.preventDefault();
+  // Holding a key makes the OS repeat `keydown`. Only the first one is the
+  // press; a repeat must not be reported as a new KEY_DOWN, which would be
+  // read as "talking over the system" and restart the capture mid-utterance.
+  if (event.repeat) return;
 
   // SPEC §9.6 rule 2: resume AudioContext inside the keydown handler (user gesture).
   void resumeAudioContext().then(() => {

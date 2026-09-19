@@ -49,6 +49,9 @@ vi.mock("../../src/content/audio-stubs", () => ({
 import {
   initHoldToTalk,
   destroyHoldToTalk,
+  getHoldKey,
+  handleStorageChange,
+  loadSettings,
   setHoldKey,
 } from "../../src/content/hold-to-talk";
 import { playListenStart, playListenEnd } from "../../src/content/audio-stubs";
@@ -232,5 +235,76 @@ describe("Hold-to-talk key capture (SPEC §6.1)", () => {
     const ids = sentMessages.map((m) => (m as { reqId?: string }).reqId);
     const unique = new Set(ids);
     expect(unique.size).toBe(ids.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Where the hold key lives in storage (SPEC 5.13): the options page saves the
+// whole Settings object under `settings`, so the key is `settings.holdKey`.
+// ---------------------------------------------------------------------------
+
+describe("Hold key comes from settings.holdKey", () => {
+  const get = (): ReturnType<typeof vi.fn> =>
+    (chrome as unknown as { storage: { local: { get: ReturnType<typeof vi.fn> } } }).storage.local.get;
+
+  beforeEach(() => {
+    setHoldKey("Space");
+  });
+
+  it("loads settings.holdKey on init", async () => {
+    get().mockResolvedValueOnce({ settings: { holdKey: "KeyF", verbosity: "fast" } });
+    await loadSettings();
+    expect(getHoldKey()).toBe("KeyF");
+    expect(get()).toHaveBeenLastCalledWith("settings");
+  });
+
+  it("ignores a top-level holdKey entry (the old, wrong location)", async () => {
+    get().mockResolvedValueOnce({ holdKey: "KeyF" });
+    await loadSettings();
+    expect(getHoldKey()).toBe("Space");
+  });
+
+  it("keeps the default when settings are missing, partial, or hold a bad value", async () => {
+    for (const stored of [{}, { settings: {} }, { settings: { holdKey: "" } }, { settings: { holdKey: 7 } }, { settings: null }]) {
+      get().mockResolvedValueOnce(stored);
+      await loadSettings();
+      expect(getHoldKey()).toBe("Space");
+    }
+  });
+
+  it("keeps the default when storage throws", async () => {
+    get().mockRejectedValueOnce(new Error("storage unavailable"));
+    await loadSettings();
+    expect(getHoldKey()).toBe("Space");
+  });
+
+  it("follows a settings change made on the options page", () => {
+    handleStorageChange({ settings: { newValue: { holdKey: "KeyG" } } }, "local");
+    expect(getHoldKey()).toBe("KeyG");
+  });
+
+  it("ignores unrelated or session-area changes and a top-level holdKey change", () => {
+    handleStorageChange({ settings: { newValue: { holdKey: "KeyG" } } }, "session");
+    handleStorageChange({ holdKey: { newValue: "KeyG" } }, "local");
+    handleStorageChange({ settings: { newValue: { verbosity: "verbose" } } }, "local");
+    expect(getHoldKey()).toBe("Space");
+  });
+
+  it("a key loaded from settings is the one that triggers key.down", async () => {
+    get().mockResolvedValueOnce({ settings: { holdKey: "KeyF" } });
+    initHoldToTalk();
+    try {
+      await loadSettings();
+      sentMessages.length = 0;
+      fireKeydown("KeyF");
+      await Promise.resolve();
+      expect(getMessages("key.down").length).toBe(1);
+      sentMessages.length = 0;
+      fireKeydown("Space");
+      await Promise.resolve();
+      expect(getMessages("key.down").length).toBe(0);
+    } finally {
+      destroyHoldToTalk();
+    }
   });
 });

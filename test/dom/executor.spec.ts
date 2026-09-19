@@ -146,31 +146,36 @@ describe("Action Executor DOM Tests (SPEC 7.6.3, 12.8, 12.10, 16 F-07)", () => {
       expect(valueAtChange).toBe("Waterloo");
     });
 
-    it("fill: notifies simulated reactive / controlled component state setters", async () => {
+    it("fill: is noticed by a React-style value tracker (native prototype setter, not the tracked instance setter)", async () => {
       const container = document.createElement("div");
       const input = document.createElement("input");
       input.setAttribute("aria-label", "Controlled Input");
       container.appendChild(input);
       document.body.appendChild(container);
 
-      // Simulate a framework (like React) tracking values via prototype setter
-      let frameworkState = "";
-      const originalSetter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value"
-      )?.set;
-
-      const setterSpy = vi.fn(function (this: HTMLInputElement, val: string) {
-        frameworkState = val;
-        originalSetter?.call(this, val);
-      });
-
+      // React installs an instance-level `value` property that records the last
+      // value it saw. On an `input` event it fires onChange only if the node's
+      // value differs from that record. Writing through the instance setter
+      // updates the record, so the framework would drop the event.
+      const nativeDescriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!;
+      let tracked = "";
+      const onChange = vi.fn();
       Object.defineProperty(input, "value", {
-        set: setterSpy,
-        get() {
-          return frameworkState;
-        },
         configurable: true,
+        get() {
+          return nativeDescriptor.get!.call(this);
+        },
+        set(v: string) {
+          tracked = String(v);
+          nativeDescriptor.set!.call(this, v);
+        },
+      });
+      input.addEventListener("input", () => {
+        const now = String(nativeDescriptor.get!.call(input));
+        if (now !== tracked) {
+          tracked = now;
+          onChange(now);
+        }
       });
 
       const index = buildElementIndex(document);
@@ -183,7 +188,9 @@ describe("Action Executor DOM Tests (SPEC 7.6.3, 12.8, 12.10, 16 F-07)", () => {
 
       const result = await executeRequest(req, { doc: document, index });
       expect(result.ok).toBe(true);
-      expect(frameworkState).toBe("Framework State Test");
+      expect(nativeDescriptor.get!.call(input)).toBe("Framework State Test");
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith("Framework State Test");
     });
 
     it("select: matches option text case-insensitively, updates selectedIndex, and dispatches change with bubbles: true", async () => {
@@ -414,6 +421,48 @@ describe("Action Executor DOM Tests (SPEC 7.6.3, 12.8, 12.10, 16 F-07)", () => {
       expect(resolvedBottom).toBe(bottomBtn);
     });
 
+    it("treats a lone match that moved > 0.15 normalized units as not_found (SPEC 12.10), and accepts small drift", () => {
+      const btn = document.createElement("button");
+      btn.textContent = "Confirm";
+      document.body.appendChild(btn);
+
+      const rect = (left: number, top: number) => ({
+        left,
+        top,
+        right: left + 100,
+        bottom: top + 30,
+        width: 100,
+        height: 30,
+        x: left,
+        y: top,
+        toJSON: () => {},
+      });
+      // Indexed at the centre (0.5, 0.5) of the mocked 1000 x 1000 document.
+      const spy = vi.spyOn(btn, "getBoundingClientRect").mockReturnValue(rect(450, 485));
+
+      const entry: ElementIndexEntry = {
+        id: "el_0",
+        role: "button",
+        name: "Confirm",
+        nameKey: "confirm",
+        x: 0.5,
+        y: 0.5,
+        enabled: true,
+        visible: true,
+        inViewport: true,
+        value: null,
+        tag: "button",
+        inputType: null,
+        isPassword: false,
+      };
+
+      expect(reResolveElement(entry, document)).toBe(btn); // unmoved
+      spy.mockReturnValue(rect(470, 505)); // drifted 20px: well inside 0.15
+      expect(reResolveElement(entry, document)).toBe(btn);
+      spy.mockReturnValue(rect(50, 50)); // jumped to the corner: 0.6 units away
+      expect(reResolveElement(entry, document)).toBeNull();
+    });
+
     it("treats element as not_found if nearest match is > 0.15 normalized units away (SPEC 12.8 rule 4, 12.10)", () => {
       const btn1 = document.createElement("button");
       btn1.textContent = "Save";
@@ -554,8 +603,8 @@ describe("Action Executor DOM Tests (SPEC 7.6.3, 12.8, 12.10, 16 F-07)", () => {
         role: "textbox",
         name: "Password Input",
         nameKey: "password input",
-        x: 0.5,
-        y: 0.5,
+        x: 0.1,
+        y: 0.035,
         enabled: true,
         visible: true,
         inViewport: true,
@@ -685,8 +734,8 @@ describe("Action Executor DOM Tests (SPEC 7.6.3, 12.8, 12.10, 16 F-07)", () => {
             role: "textbox",
             name: "Destination",
             nameKey: "destination",
-            x: 0.5,
-            y: 0.2,
+            x: 0.1,
+            y: 0.035,
             enabled: true,
             visible: true,
             inViewport: true,
@@ -700,8 +749,8 @@ describe("Action Executor DOM Tests (SPEC 7.6.3, 12.8, 12.10, 16 F-07)", () => {
             role: "button",
             name: "Disabled Action",
             nameKey: "disabled action",
-            x: 0.5,
-            y: 0.5,
+            x: 0.1,
+            y: 0.035,
             enabled: true, // was marked enabled at build time, but is disabled live
             visible: true,
             inViewport: true,
@@ -715,8 +764,8 @@ describe("Action Executor DOM Tests (SPEC 7.6.3, 12.8, 12.10, 16 F-07)", () => {
             role: "button",
             name: "Should Not Execute",
             nameKey: "should not execute",
-            x: 0.5,
-            y: 0.8,
+            x: 0.1,
+            y: 0.035,
             enabled: true,
             visible: true,
             inViewport: true,

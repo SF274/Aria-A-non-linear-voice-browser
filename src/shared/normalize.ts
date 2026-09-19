@@ -265,3 +265,33 @@ export function normalizeTranscript(raw: string): NormalizedTranscript {
     fillValue,
   };
 }
+
+/**
+ * Sanitizes strings for model prompts per SPEC 8.4:
+ * 1. Strip all C0 and C1 control characters
+ * 2. Collapse all whitespace runs (including newlines) to a single space
+ * 3. Truncate to the field's maximum length
+ * 4. Strip <page_elements>, </page_elements>, <user_command>, </user_command> case-insensitively
+ * 5. Trim
+ */
+export function sanitizeForPrompt(s: string, maxLength?: number): string {
+  if (!s) return "";
+  // 1. Strip C0 and C1 control characters: \u0000-\u001f, \u007f-\u009f
+  // eslint-disable-next-line no-control-regex -- SPEC 8.4 rule 1 requires stripping C0 and C1 control characters
+  let res = s.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  // 2. Collapse all whitespace runs to a single space
+  res = res.replace(/\s+/g, " ");
+  // 3. Truncate to maxLength
+  if (typeof maxLength === "number" && maxLength > 0) {
+    res = res.slice(0, maxLength);
+  }
+  // 4. Strip tag delimiters case-insensitively
+  res = res.replace(/<\/?page_elements>|<\/?user_command>/gi, "");
+  // 5. Collapse whitespace again and trim
+  res = res.replace(/\s+/g, " ").trim();
+  // Ensure length constraint holds after trimming
+  if (typeof maxLength === "number" && maxLength > 0 && res.length > maxLength) {
+    res = res.slice(0, maxLength).trim();
+  }
+  return res;
+}

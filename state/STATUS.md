@@ -25,8 +25,8 @@ Phases: `NOT_STARTED` → `T0` → `T1` → `T2` → `STABILIZING` → `DEMO_REA
 
 | Tier | Total | DONE | IN_PROGRESS | BLOCKED | TODO |
 | --- | --- | --- | --- | --- | --- |
-| T0 | 19 | 11 | 0 | 0 | 8 |
-| T1 | 10 | 0 | 0 | 0 | 10 |
+| T0 | 19 | 17 | 0 | 0 | 2 |
+| T1 | 10 | 1 | 0 | 0 | 9 |
 | T2 | 4 | 0 | 0 | 0 | 4 |
 
 ---
@@ -52,10 +52,10 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | T0-10 Speech recognition | claude | DONE | completed 2026-09-19T16:47:07Z; pnpm verify green, offscreen document host in src/offscreen/, Web Speech API SpeechRecognition lifecycle with fresh instance per utterance, interim/final results, error mapping per SPEC 10.5. |
 | T0-11 Hold-to-talk | claude | DONE | completed 2026-09-19T16:47:07Z; pnpm verify green, window capture keydown/keyup matching holdKey, editable target guard for input/textarea/select/contenteditable, listenStart/listenEnd tones, 250ms tap discard. |
 | T0-12 Options page | gemini | DONE | completed 2026-09-19T14:43:00Z; pnpm verify green, 8 unit/DOM tests passing, e2e options test passing (persists API key, no leaks, gate buttons functional), F-21 criteria fully met. |
-| T0-13 Gemini client | claude | TODO | |
+| T0-13 Gemini client | gemini | DONE | completed 2026-09-19T19:18:00Z; pnpm verify green (271 Vitest + 13 Playwright e2e), prompts.ts compiled constant, client.ts x-goog-api-key header security & timeout/retry handling, resolver.ts schema validation & error recovery, 9 fixtures in test/fixtures/gemini/, F-06 criteria fully met. |
 | T0-14 Action validation | gemini | DONE | completed 2026-09-19T16:08:30Z; pnpm verify green, all 9 rules from 7.6.1 unit tested, 7.6.2 verb-role table enforced with batch abort. |
 | T0-15 Executor | gemini | DONE | completed 2026-09-19T16:08:30Z; pnpm verify green (199 Vitest + 13 Playwright e2e), all 7 verbs verified, bubbles: true on input/change, 12.8 re-resolution + 0.15 movement threshold, stale target batch abort, F-07 criteria fully met. |
-| T0-16 TTS service | claude | TODO | |
+| T0-16 TTS service | gemini | DONE | completed 2026-09-19T20:16:19Z; pnpm verify green (300 Vitest + 13 Playwright e2e), dual-engine TTS (ElevenLabs Flash v2.5 + chrome.tts fallback, HD-A06/HD-07), AudioContext routing to content script, 40-char truncation, exact templates per SPEC 10.6.3, interruption on key.down. |
 | T0-17 Highlight overlay | gemini | DONE | completed 2026-09-19T14:47:00Z; pnpm verify green, 7 DOM tests passing, inline styles verified byte-identical before/during/after, F-09 criteria fully met. |
 | T0-18 Security tests | claude | TODO | not deferrable past the integration freeze |
 | T0-19 Chain harness | claude | TODO | |
@@ -70,7 +70,7 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | T1-05 Sequences | claude | TODO | enables the primary demo |
 | T1-06 Summary and cache | gemini | TODO | |
 | T1-07 Q&A | gemini | TODO | |
-| T1-08 Tabs, search, bookmark | gemini | TODO | |
+| T1-08 Tabs, search, bookmark | gemini (built by claude on human instruction) | DONE | completed 2026-09-19; pnpm verify green. `src/sw/commands/browser.ts` + the SPEC 6.18 intercept in `pipeline.ts`. F-15 criteria checked one by one: every 6.18 row acts (unit tests over a mocked `chrome.tabs`, plus QA F1/F3 driving a real browser: search, Keep, switch/next/previous tab, new/close tab, reload, back, forward); "search for waterloo" opens `SEARCH_TEMPLATE` with the query encoded (F1); "go back" with no history speaks "There's nothing to go back to." (F3); a Gemini spy shows zero model calls for all of them (F1, F3, and a fetch spy in the unit tests). Save is Google Keep, not a bookmark — HD-08 / DEV-006.
 | T1-09 Blackout overlay | claude | TODO | |
 | T1-10 Golden path test | claude | TODO | |
 
@@ -85,7 +85,8 @@ Legend: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 ---
 
 ## Active work
-*(none)*
+- **Tier 1 global commands and Phase 1 stragglers (human-directed, 2026-09-19).** T1-08 is `DONE` (above). Two fixes shipped with it: `hold-to-talk.ts` now reads `settings.holdKey` (the options page always wrote it there; the old top-level read meant a changed hold key never applied), and the spoken sentence for a model HTTP 429 no longer reads "rate limited" aloud (DEV-007). Execution ticks are in: one SPEC 9.3 positional tick per sequence step, plus a quiet "still working" click while the model is being waited on. **That is not T1-02**, which stays `TODO`: the audio engine proper (`src/content/audio.ts`, the F-10 scan, clarify ticks, mutation sonification) is unbuilt. T1-04 and T1-05 also stay `TODO` — the clarification and sequence paths run and are covered by QA suites C/E, but their own acceptance tests (`test/e2e/clarify.spec.ts`, `test/e2e/sequence.spec.ts`) do not exist. See NOTES N-016, DEVIATIONS DEV-006 / DEV-007, HUMAN_DECISIONS HD-08.
+- **Independent true-audio QA pass (human-directed, not a numbered task).** Added `test/e2e/qa-exhaustive.spec.ts` (+ `support/qa-harness.ts`, `scripts/generate-test-audio.ts`, `test/fixtures/audio/`), and built the service-worker pipeline that was missing between `stt.result` and the spoken confirmation (`src/sw/pipeline.ts`, `src/sw/resolver/clarify.ts`; DEV-005). Defects found and fixed are listed in `NOTES.md` N-015; deviations in `DEVIATIONS.md` DEV-003 to DEV-005; environment findings in N-014. **No task state above was changed:** T0-19 stays `TODO` (IG-CHAIN needs 10 consecutive passes recorded), T1-04 / T1-05 stay `TODO` (audio ticks and the stale-`buildId` re-fetch are not built).
 
 ## Blocked work
 *(none)*

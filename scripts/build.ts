@@ -12,12 +12,15 @@
 
 import { rmSync } from "node:fs";
 import { build as viteBuild } from "vite";
-import { copyManifest, ENTRY_OUTPUT, outDir, resolveEntries, root } from "../vite.config.ts";
+import { buildMode, copyManifest, ENTRY_OUTPUT, outDir, resolveEntries, root } from "../vite.config.ts";
 
 async function buildEntry(name: string, entryPath: string): Promise<void> {
   await viteBuild({
     root,
     configFile: false,
+    mode: buildMode,
+    // SPEC 17.3: the test.transcript bypass only exists in development builds.
+    define: { __ECHO_DEV__: JSON.stringify(buildMode === "development") },
     logLevel: "warn",
     build: {
       outDir,

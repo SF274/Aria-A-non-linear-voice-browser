@@ -18,7 +18,15 @@ import { defineConfig, type BuildOptions } from "vite";
 // path.
 
 export const root = resolve(import.meta.dirname);
-export const outDir = resolve(root, "dist");
+/**
+ * `ECHO_BUILD_MODE=development` builds the SPEC 17.3 `test.transcript` hook
+ * into the service worker; the default (production) compiles it out. E2E suites
+ * that need the hook build into a separate directory via `ECHO_OUT_DIR` so
+ * `dist/` always stays the production bundle.
+ */
+export const buildMode: "development" | "production" =
+  process.env.ECHO_BUILD_MODE === "development" ? "development" : "production";
+export const outDir = resolve(root, process.env.ECHO_OUT_DIR ?? "dist");
 
 /** Fixed set of entry points named across SPEC 4 and TASKS.md. Only the ones
  * that exist on disk are bundled; this lets `pnpm build` succeed at every

@@ -17,6 +17,7 @@ import { ENVELOPE_NS, isEnvelopeFor } from "../shared/contracts";
 import type { Envelope } from "../shared/contracts";
 import {
   HOLD_MIN_DURATION_MS,
+  QA_IGNORE_STT_KEY,
   RECOGNITION_MODE_KEY,
 } from "../shared/constants";
 import {
@@ -28,6 +29,8 @@ import {
   setOnClarifyTimeout,
 } from "./session";
 import { ensureMicPermission, ensureOffscreen, resetMicGranted } from "./mic";
+import { speakFromSettings, stopTts } from "./tts";
+import { cancelPipeline, rememberTab, runPipeline } from "./pipeline";
 
 // ---------------------------------------------------------------------------
 // Content script re-injection on install (SPEC §8.7 `scripting`)
@@ -55,14 +58,23 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // ---------------------------------------------------------------------------
-// TTS helper (SPEC §10.6)
+// TTS helper (SPEC §10.6, HD-A06/HD-07)
 // ---------------------------------------------------------------------------
 
 function speak(text: string): void {
-  chrome.tts.stop();
-  chrome.tts.speak(text, { rate: 1.6 });
+  void speakFromSettings(text);
 }
 
+
+// ---------------------------------------------------------------------------
+// Development-only determinism switch (compiled out of production, SPEC 17.3)
+// ---------------------------------------------------------------------------
+
+async function ignoreRealStt(): Promise<boolean> {
+  if (typeof __ECHO_DEV__ === "undefined" || !__ECHO_DEV__) return false;
+  const stored = await chrome.storage.session.get(QA_IGNORE_STT_KEY).catch(() => ({}));
+  return (stored as Record<string, unknown>)[QA_IGNORE_STT_KEY] === true;
+}
 
 // ---------------------------------------------------------------------------
 // Send message to the offscreen document
@@ -118,6 +130,7 @@ setOnTranscribingTimeout(() => {
       console.log("[ECHO SW] Transcribing timeout — promoting interim:", session.lastInterim);
       await updateTranscript(null, session.lastInterim);
       await transitionTo("RESOLVING", { finalTranscript: session.lastInterim });
+      void runPipeline(session.lastInterim);
     } else {
       console.warn("[ECHO SW] Transcribing timeout — no result, entering ERROR");
       speak("Something went wrong with speech.");
@@ -150,21 +163,13 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
     void (async () => {
       const session = await getSession();
 
-      // SPEC §4.5: KEY_DOWN in any non-IDLE/CLARIFYING state cancels current op.
-      if (session.state !== "IDLE" && session.state !== "CLARIFYING") {
-        chrome.tts.stop();
-        sendToOffscreen("stt.abort", {});
-        await transitionTo(
-          "LISTENING",
-          { keyDownAt: Date.now(), lastInterim: null, finalTranscript: null },
-          true /* force */
-        );
-        sendResponse({ ok: true });
-        return;
-      }
-
-      // SPEC §10.6.4: stop TTS on every key.down.
-      chrome.tts.stop();
+      // SPEC §4.5: KEY_DOWN in any state except IDLE or CLARIFYING cancels the
+      // current operation. SPEC §10.6.4: it also stops speech, always.
+      const interrupting = session.state !== "IDLE" && session.state !== "CLARIFYING";
+      stopTts();
+      cancelPipeline();
+      if (interrupting) sendToOffscreen("stt.abort", {});
+      await rememberTab(_sender.tab?.id);
 
       // SPEC §6.2: check / obtain mic permission before starting STT.
       let micGranted = false;
@@ -192,12 +197,18 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
         return;
       }
 
-      await transitionTo("LISTENING", {
-        keyDownAt: Date.now(),
-        lastInterim: null,
-        finalTranscript: null,
-        clarification: session.state === "CLARIFYING" ? session.clarification : null,
-      });
+      // An interrupting KEY_DOWN still starts a fresh capture: "talking over"
+      // the system means the user is speaking the next command.
+      await transitionTo(
+        "LISTENING",
+        {
+          keyDownAt: Date.now(),
+          lastInterim: null,
+          finalTranscript: null,
+          clarification: session.state === "CLARIFYING" ? session.clarification : null,
+        },
+        interrupting
+      );
 
       const config = await getRecognitionConfig();
       sendToOffscreen("stt.start", config);
@@ -246,6 +257,11 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
         confidence: number;
       };
 
+      if (await ignoreRealStt()) {
+        console.log("[ECHO SW] real recognizer heard:", JSON.stringify(transcript), "final=" + isFinal);
+        return;
+      }
+
       const session = await getSession();
       // Only process if we're still in TRANSCRIBING (or LISTENING edge case).
       if (session.state !== "TRANSCRIBING" && session.state !== "LISTENING") return;
@@ -253,12 +269,22 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
       if (isFinal) {
         await updateTranscript(null, transcript);
         await transitionTo("RESOLVING", { finalTranscript: transcript });
-        // TODO (T0-13): pass to resolver pipeline
         console.log("[ECHO SW] Final transcript:", transcript);
+        void runPipeline(transcript);
       } else {
         await updateTranscript(transcript, null);
       }
     })();
+    return undefined;
+  }
+
+  // =========================================================================
+  // stt.event — diagnostic relay of recognizer lifecycle events
+  // (audiostart / speechstart / speechend). Logged only; never drives state.
+  // =========================================================================
+  if (msg.type === "stt.event") {
+    const { name } = msg.payload as { name: string };
+    console.log("[ECHO SW] stt.event", name);
     return undefined;
   }
 
@@ -273,9 +299,14 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
       };
 
       console.warn("[ECHO SW] stt.error", code, errorMessage);
+      if (await ignoreRealStt()) return;
 
+      // SPEC §4.5: STT_ERROR is an edge out of LISTENING / TRANSCRIBING only. An
+      // error that arrives later (the recognizer's own `end` after a transcript
+      // was injected or already delivered, or after a newer KEY_DOWN) is stale
+      // and must not drag a running command back to IDLE.
       const session = await getSession();
-      if (session.state === "IDLE") return; // stale error after reset
+      if (session.state !== "LISTENING" && session.state !== "TRANSCRIBING") return;
 
       switch (code) {
         case "no-speech":
@@ -350,7 +381,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
       console.log("[ECHO SW] test.transcript injected:", transcript);
       await updateTranscript(null, transcript);
       await transitionTo("RESOLVING", { finalTranscript: transcript });
-      // TODO (T0-13): pass to resolver pipeline
+      void runPipeline(transcript);
       sendResponse({ ok: true });
     })();
     return true;

@@ -1,0 +1,15 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\n  \"actions\": [\n    {\n      \"verb\": \"click\",\n      \"elementId\": \"el_23\"\n    }\n  ],\n  \"confidence\": 0.60,\n  \"ambiguousWith\": [\n    \"el_23\",\n    \"el_24\"\n  ],\n  \"clarifyingQuestion\": \"PDF or Word?\"\n}"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP"
+    }
+  ]
+}

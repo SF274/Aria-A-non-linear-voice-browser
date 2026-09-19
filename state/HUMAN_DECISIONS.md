@@ -104,6 +104,15 @@ An escalation without options and a recommendation is not an escalation, it is a
 - **Answer:** Option 1. Identical, harder path.
 - **Answered:** 2026-09-19
 
+### HD-07 — ElevenLabs Integration for Competition Track
+- **Answer:** We are entering an ElevenLabs hackathon track. Build ElevenLabs as the primary TTS engine. To save API credits during testing, implement a dual-engine architecture: add a `useLocalTts` boolean flag in `settings` that routes output to `chrome.tts` when true, and ElevenLabs when false.
+- **Binding effect:** Overrides SPEC.md 10.6.1. The agent is authorized to implement an external network call for TTS.
+
+### HD-08 — "Save this page" opens Google Keep, and global commands include "switch to <name> tab"
+- **Asked:** not asked; given as a directive by the human on 2026-09-19 (the "Tier 1 Global Commands" mission).
+- **Answer:** "Save this page" extracts the current tab's title and URL and opens `https://keep.google.com/#NOTE/?text=` + `encodeURIComponent(title + "\n" + url)` in a new tab. Tab management adds "switch to [name] tab", matched against open tabs' titles and URLs with a basic string similarity. Every global command speaks a short confirmation.
+- **Binding effect:** Overrides SPEC 6.18's bookmark row (`chrome.bookmarks.create`). The `bookmarks` permission is left in the manifest (SPEC 8.7 lists it) but is no longer used. Recorded as DEV-006.
+- **Answered:** 2026-09-19
 ---
 
 ## Open

@@ -169,10 +169,27 @@ export function onTransition(cb: TransitionCallback): void {
  * @param updates  Optional partial updates to merge into the session.
  * @param force    True when KEY_DOWN is interrupting (bypasses guard).
  */
-export async function transitionTo(
+export function transitionTo(
   toState: SessionState,
   updates: Partial<Omit<Session, "state">> = {},
   force = false
+): Promise<Session> {
+  // Transitions are read-modify-write on storage. Serialize them so a
+  // pipeline step and a KEY_DOWN cannot interleave and lose an update.
+  const run = transitionQueue.then(() => applyTransition(toState, updates, force));
+  transitionQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+let transitionQueue: Promise<void> = Promise.resolve();
+
+async function applyTransition(
+  toState: SessionState,
+  updates: Partial<Omit<Session, "state">>,
+  force: boolean
 ): Promise<Session> {
   const session = await loadSession();
   const from = session.state;
@@ -188,6 +205,11 @@ export async function transitionTo(
     ...updates,
     state: toState,
   };
+
+  // A pinned clarification never outlives the session returning to IDLE.
+  if (toState === "IDLE" && !("clarification" in updates)) {
+    next.clarification = null;
+  }
 
   // Per-state side-effects on entry.
   clearAllTimers();

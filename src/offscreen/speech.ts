@@ -124,7 +124,27 @@ export function startRecognition(config: SttStartConfig): void {
   // Event handlers (SPEC §6.3 steps 3–5)
   // -------------------------------------------------------------------------
 
+  // Events from a superseded instance (aborted by a newer KEY_DOWN, whose
+  // `end`/`error` arrive asynchronously) must never touch the current session:
+  // an old `onend` would null the new activeRecognition and report a bogus
+  // `no-speech` that sends the state machine back to IDLE mid-utterance.
+  const isCurrent = (): boolean => activeRecognition === recognition;
+
+  // Diagnostic relay: lets the SW (and the true-audio e2e suite) observe that
+  // the fake/real microphone stream actually reached the recognizer, even
+  // when the recognition service itself returns no transcript.
+  recognition.onaudiostart = () => {
+    if (isCurrent()) send("stt.event", { name: "audiostart" });
+  };
+  recognition.onspeechstart = () => {
+    if (isCurrent()) send("stt.event", { name: "speechstart" });
+  };
+  recognition.onspeechend = () => {
+    if (isCurrent()) send("stt.event", { name: "speechend" });
+  };
+
   recognition.onresult = (event: SpeechRecognitionEvent) => {
+    if (!isCurrent()) return;
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
       const transcript = result[0].transcript;
@@ -141,11 +161,13 @@ export function startRecognition(config: SttStartConfig): void {
   };
 
   recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+    if (!isCurrent()) return;
     handleRecognitionError(event.error, event.message ?? event.error);
   };
 
   // SPEC §6.3 step 5: onend with no final result → stt.error { code: "no-speech" }
   recognition.onend = () => {
+    if (!isCurrent()) return;
     activeRecognition = null;
     if (!hasFinalResult) {
       send("stt.error", {

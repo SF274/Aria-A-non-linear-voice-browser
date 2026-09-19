@@ -19,6 +19,8 @@ describe("Options page DOM and storage unit tests (SPEC 5.13, 8.6, 10.3, 16 F-21
         <option value="fast" selected>Fast</option>
         <option value="verbose">Verbose</option>
       </select>
+      <input id="use-local-tts" type="checkbox" checked>
+      <input id="elevenlabs-api-key" type="password">
       <button id="btn-save">Save Settings</button>
       <div id="save-status"></div>
       <div id="stt-mode-display"></div>
@@ -61,6 +63,24 @@ describe("Options page DOM and storage unit tests (SPEC 5.13, 8.6, 10.3, 16 F-21
     expect(settings.geminiModel).toBe("gemini-3.1-flash-lite");
     expect(settings.verbosity).toBe("fast");
     expect(settings.ttsRate).toBe(1.6);
+    expect(settings.useLocalTts).toBe(true);
+    expect(settings.elevenLabsApiKey).toBeNull();
+  });
+
+  it("saves updated settings with dual-engine TTS fields", async () => {
+    const useLocalTtsCheckbox = document.getElementById("use-local-tts") as HTMLInputElement;
+    const elevenLabsKeyInput = document.getElementById("elevenlabs-api-key") as HTMLInputElement;
+
+    useLocalTtsCheckbox.checked = false;
+    elevenLabsKeyInput.value = "xi-secret-test-key-123";
+
+    const saved = await saveSettings();
+    expect(saved.useLocalTts).toBe(false);
+    expect(saved.elevenLabsApiKey).toBe("xi-secret-test-key-123");
+
+    const fromStorage = await loadSettings();
+    expect(fromStorage.useLocalTts).toBe(false);
+    expect(fromStorage.elevenLabsApiKey).toBe("xi-secret-test-key-123");
   });
 
   it("saves updated settings with verbosity=fast giving ttsRate=1.6", async () => {

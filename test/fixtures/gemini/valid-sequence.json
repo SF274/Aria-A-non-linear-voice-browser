@@ -1,0 +1,15 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\n  \"actions\": [\n    {\n      \"verb\": \"click\",\n      \"elementId\": \"el_12\"\n    },\n    {\n      \"verb\": \"fill\",\n      \"elementId\": \"el_16\",\n      \"value\": \"Ada Lovelace\"\n    },\n    {\n      \"verb\": \"fill\",\n      \"elementId\": \"el_17\",\n      \"value\": \"ada@example.com\"\n    },\n    {\n      \"verb\": \"check\",\n      \"elementId\": \"el_21\"\n    },\n    {\n      \"verb\": \"click\",\n      \"elementId\": \"el_22\"\n    }\n  ],\n  \"confidence\": 0.92\n}"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP"
+    }
+  ]
+}

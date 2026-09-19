@@ -1,0 +1,15 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\n  \"actions\": [\n    {\n      \"verb\": \"click\",\n      \"elementId\": \"el_12\",\n      \"selector\": \"#flight-940-button\",\n      \"xpath\": \"//button[1]\"\n    }\n  ],\n  \"confidence\": 0.95,\n  \"unexpectedField\": \"ignored\"\n}"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP"
+    }
+  ]
+}

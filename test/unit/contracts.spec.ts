@@ -654,10 +654,29 @@ describe("SettingsSchema (SPEC 5.13)", () => {
     scanKey: "KeyM",
     telemetryEnabled: false,
     audioEnabled: true,
+    useLocalTts: true,
+    elevenLabsApiKey: null,
   };
 
   it("accepts the default settings", () => {
     expect(SettingsSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("defaults useLocalTts to true and elevenLabsApiKey to null if omitted", () => {
+    const withoutTts = {
+      geminiApiKey: null,
+      geminiModel: "gemini-model-id",
+      verbosity: "fast",
+      ttsVoiceName: null,
+      ttsRate: 1.6,
+      holdKey: "Space",
+      scanKey: "KeyM",
+      telemetryEnabled: false,
+      audioEnabled: true,
+    };
+    const parsed = SettingsSchema.parse(withoutTts);
+    expect(parsed.useLocalTts).toBe(true);
+    expect(parsed.elevenLabsApiKey).toBeNull();
   });
 
   it("accepts a configured key, voice, and verbose mode", () => {
@@ -668,6 +687,8 @@ describe("SettingsSchema (SPEC 5.13)", () => {
         ttsVoiceName: "Google US English",
         verbosity: "verbose",
         ttsRate: 1.0,
+        useLocalTts: false,
+        elevenLabsApiKey: "xi-test-key",
       })
     ).toBe(true);
   });

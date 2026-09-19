@@ -241,6 +241,20 @@
         </select>
       </div>
 
+      <div class="field">
+        <label for="use-local-tts" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input id="use-local-tts" type="checkbox" checked style="width: auto; margin: 0;">
+          Use Local TTS (chrome.tts)
+        </label>
+        <p class="help-text">When checked, uses on-device chrome.tts to save API credits. When unchecked, uses ElevenLabs Flash/Turbo (~75ms latency).</p>
+      </div>
+
+      <div class="field">
+        <label for="elevenlabs-api-key">ElevenLabs API Key</label>
+        <input id="elevenlabs-api-key" type="password" placeholder="xi-..." autocomplete="off">
+        <p class="help-text">Used for ElevenLabs cloud TTS when Local TTS is unchecked. Persisted to storage only.</p>
+      </div>
+
       <button id="btn-save" class="btn" type="button">Save Settings</button>
       <div id="save-status" role="status" aria-live="polite"></div>
     </section>

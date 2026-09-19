@@ -1,0 +1,15 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\n  \"actions\": [\n    {\n      \"verb\": \"click\",\n      \"elementId\": \"el_12\"\n    }\n  ],\n  \"confidence\": 0.95\n}"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP"
+    }
+  ]
+}

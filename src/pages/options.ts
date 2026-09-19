@@ -29,6 +29,8 @@ const DEFAULT_SETTINGS: Settings = {
   scanKey: "KeyM",
   telemetryEnabled: false,
   audioEnabled: true,
+  useLocalTts: true,
+  elevenLabsApiKey: null,
 };
 
 function getSpeechRecognitionStatic(): SpeechRecognitionStatic | null {
@@ -75,12 +77,20 @@ export async function saveSettings(): Promise<Settings> {
   const verbosityVal = (verbositySelect?.value as Verbosity) || "fast";
   const rateVal = verbosityVal === "fast" ? 1.6 : 1.0;
 
+  // HD-A06 / HD-07: read TTS engine settings from form
+  const useLocalTtsCheckbox = document.getElementById("use-local-tts") as HTMLInputElement | null;
+  const elevenLabsKeyInput = document.getElementById("elevenlabs-api-key") as HTMLInputElement | null;
+  const useLocalTtsVal = useLocalTtsCheckbox ? useLocalTtsCheckbox.checked : true;
+  const elevenLabsKeyVal = elevenLabsKeyInput?.value.trim() ?? "";
+
   const newSettings: Settings = {
     ...current,
     geminiApiKey: apiKeyVal.length > 0 ? apiKeyVal : null,
     geminiModel: modelVal,
     verbosity: verbosityVal,
     ttsRate: rateVal,
+    useLocalTts: useLocalTtsVal,
+    elevenLabsApiKey: elevenLabsKeyVal.length > 0 ? elevenLabsKeyVal : null,
   };
 
   const parsed = SettingsSchema.safeParse(newSettings);
@@ -394,6 +404,15 @@ export async function initOptionsPage(): Promise<void> {
   }
   if (verbositySelect && settings.verbosity) {
     verbositySelect.value = settings.verbosity;
+  }
+  // HD-A06 / HD-07: populate TTS engine toggle and ElevenLabs key
+  const useLocalTtsCheckbox = document.getElementById("use-local-tts") as HTMLInputElement | null;
+  const elevenLabsKeyInput = document.getElementById("elevenlabs-api-key") as HTMLInputElement | null;
+  if (useLocalTtsCheckbox) {
+    useLocalTtsCheckbox.checked = settings.useLocalTts;
+  }
+  if (elevenLabsKeyInput && settings.elevenLabsApiKey) {
+    elevenLabsKeyInput.value = settings.elevenLabsApiKey;
   }
 
   saveBtn?.addEventListener("click", () => {

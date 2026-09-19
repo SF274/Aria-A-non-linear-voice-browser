@@ -17,6 +17,21 @@
  *   4. If resume() fails → audioAvailable = false.
  */
 
+import {
+  GAIN_FLOOR,
+  INPUT_FILTER_FREQ_MULTIPLIER,
+  INPUT_FILTER_Q,
+  PAN_CLAMP,
+  ROLE_CLASS_BY_ROLE,
+  ROLE_CLASS_TIMBRE,
+  type RoleClass,
+  TONE_ATTACK_MS,
+  TONE_BASE_FREQ_HZ,
+  TONE_OCTAVE_SPAN,
+  TONE_RELEASE_MS,
+  TONE_SUSTAIN_MS,
+} from "../shared/constants";
+
 let _ctx: AudioContext | null = null;
 let audioAvailable = true;
 
@@ -121,6 +136,126 @@ export async function playError(): Promise<void> {
   const t0 = ctx.currentTime;
   playTone(ctx, 200, "square", 60, 0.1, 0, t0);
   playTone(ctx, 200, "square", 60, 0.1, 0, t0 + 0.12); // 60 ms pulse + 60 ms gap
+}
+
+// ---------------------------------------------------------------------------
+// Execution ticks (SPEC 9.3, 7.6.3 step 5) and the "still working" tick
+// ---------------------------------------------------------------------------
+
+/** SPEC 9.3: horizontal position -> stereo pan. */
+export function panForX(x: number): number {
+  return Math.min(PAN_CLAMP, Math.max(-PAN_CLAMP, 2 * x - 1));
+}
+
+/** SPEC 9.3: vertical position -> pitch. y=1 -> 220 Hz, y=0 -> 880 Hz. */
+export function freqForY(y: number): number {
+  return TONE_BASE_FREQ_HZ * Math.pow(2, TONE_OCTAVE_SPAN * (1 - y));
+}
+
+export interface TickTarget {
+  /** Normalized document coordinates of the element centre, 0..1. */
+  x: number;
+  y: number;
+  role: string;
+}
+
+/** SPEC 9.3 timbre table: oscillator, peak gain and (for inputs) a lowpass. */
+export function timbreForRole(role: string): { type: OscillatorType; peak: number; lowpass: boolean } {
+  const roleClass: RoleClass =
+    (ROLE_CLASS_BY_ROLE as Record<string, RoleClass | undefined>)[role] ?? "other";
+  switch (roleClass) {
+    case "navigational":
+      return { type: "sine", peak: ROLE_CLASS_TIMBRE.navigational.peakGain, lowpass: false };
+    case "control":
+      return { type: "triangle", peak: ROLE_CLASS_TIMBRE.control.peakGain, lowpass: false };
+    case "input":
+      return { type: "square", peak: ROLE_CLASS_TIMBRE.input.peakGain, lowpass: true };
+    case "other":
+      // SPEC 9.3 gives "other" a x0.7 gain and no peak of its own: scale the sine (navigational) peak.
+      return {
+        type: "sine",
+        peak: ROLE_CLASS_TIMBRE.navigational.peakGain * ROLE_CLASS_TIMBRE.other.gainMultiplier,
+        lowpass: false,
+      };
+  }
+}
+
+/**
+ * One positional tick: pan from x, pitch from y, timbre from role (SPEC 9.3).
+ * Envelope: attack, sustain, release from the SPEC constants (90 ms total). The
+ * graph is scheduled against currentTime, not setTimeout (SPEC 9.5).
+ */
+function scheduleSpatialTone(ctx: AudioContext, target: TickTarget, when: number): void {
+  const { type, peak, lowpass } = timbreForRole(target.role);
+  const freq = freqForY(target.y);
+  const attackEnd = when + TONE_ATTACK_MS / 1000;
+  const sustainEnd = attackEnd + TONE_SUSTAIN_MS / 1000;
+  const end = sustainEnd + TONE_RELEASE_MS / 1000;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const panner = ctx.createStereoPanner();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, when);
+  panner.pan.setValueAtTime(panForX(target.x), when);
+
+  gain.gain.setValueAtTime(0, when);
+  gain.gain.linearRampToValueAtTime(peak, attackEnd);
+  gain.gain.setValueAtTime(peak, sustainEnd);
+  // SPEC 9.3: never ramp to exactly 0; ramp to GAIN_FLOOR, then set 0.
+  gain.gain.exponentialRampToValueAtTime(GAIN_FLOOR, end);
+  gain.gain.setValueAtTime(0, end);
+
+  if (lowpass) {
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(freq * INPUT_FILTER_FREQ_MULTIPLIER, when);
+    filter.Q.setValueAtTime(INPUT_FILTER_Q, when);
+    osc.connect(filter);
+    filter.connect(gain);
+  } else {
+    osc.connect(gain);
+  }
+  gain.connect(panner);
+  panner.connect(ctx.destination);
+
+  osc.start(when);
+  osc.stop(end);
+}
+
+/**
+ * The tick played as each action of a multi-step sequence runs, so the user
+ * hears progress (and where on the page) before the spoken confirmation.
+ * Never throws and never waits on the caller: a dead AudioContext must not
+ * stop an action from being performed (SPEC 9.6).
+ */
+export async function playPositionalTick(target: TickTarget): Promise<void> {
+  try {
+    await resumeAudioContext();
+    const ctx = getAudioContext();
+    if (!ctx || ctx.state !== "running") return;
+    scheduleSpatialTone(ctx, target, ctx.currentTime);
+  } catch {
+    // Degrade to silence.
+  }
+}
+
+/**
+ * A very quiet, very short click that repeats while the service worker waits on
+ * the model, so a two-second pause does not sound like a frozen system. It is
+ * deliberately unlike the positional ticks: one fixed pitch, dead centre, low
+ * gain, 30 ms.
+ */
+export async function playProcessingTick(): Promise<void> {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    if (ctx.state !== "running") await ctx.resume();
+    if (ctx.state !== "running") return;
+    playTone(ctx, 1800, "sine", 30, 0.05);
+  } catch {
+    // Degrade to silence.
+  }
 }
 
 /** True if the AudioContext is usable. A suspended ctx that cannot be resumed sets this false. */

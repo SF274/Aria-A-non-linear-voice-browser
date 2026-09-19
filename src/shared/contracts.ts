@@ -457,6 +457,10 @@ export const SettingsSchema = z.object({
   telemetryEnabled: z.boolean(),
   /** Default true. */
   audioEnabled: z.boolean(),
+  /** HD-A06 / HD-07: Use local chrome.tts (true) or ElevenLabs cloud API (false). Default true. */
+  useLocalTts: z.boolean().default(true),
+  /** ElevenLabs API key for cloud TTS. Read from chrome.storage.local. */
+  elevenLabsApiKey: z.string().nullable().default(null),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;

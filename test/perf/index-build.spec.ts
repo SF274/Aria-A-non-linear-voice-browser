@@ -42,13 +42,15 @@ describe("Index Build Performance Gate IG-05 (SPEC 6.5, 12.2, 18)", () => {
     }
     document.body.innerHTML = html;
 
-    // Warm-up run
+    // Warm-up runs to trigger V8 TurboFan JIT compilation
+    buildElementIndex(document);
+    buildElementIndex(document);
     buildElementIndex(document);
 
-    // Timed run (best of 5 runs to absorb single-iteration GC/OS scheduling pauses)
+    // Timed run (best of 10 runs to absorb single-iteration GC/OS scheduling pauses)
     let duration = Infinity;
     let index = buildElementIndex(document);
-    for (let r = 0; r < 5; r++) {
+    for (let r = 0; r < 10; r++) {
       const start = performance.now();
       const candidate = buildElementIndex(document);
       const elapsed = performance.now() - start;

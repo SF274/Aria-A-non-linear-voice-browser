@@ -20,6 +20,9 @@ declare class SpeechRecognition extends EventTarget {
   onresult: ((event: SpeechRecognitionEvent) => void) | null;
   onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
+  onaudiostart: (() => void) | null;
+  onspeechstart: (() => void) | null;
+  onspeechend: (() => void) | null;
   onstart: (() => void) | null;
   onspeechstart: (() => void) | null;
   onspeechend: (() => void) | null;

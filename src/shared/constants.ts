@@ -25,6 +25,9 @@ export const MIN_CLARIFY_CANDIDATES = 2;
 /** SPEC 7.2.4 / 5.9: AMBIGUOUS requires 2 to 4 candidates. */
 export const MAX_CLARIFY_CANDIDATES = 4;
 
+/** SPEC 7.5.2 step 3: the confident threshold is lowered to this when matching a clarification reply. */
+export const CLARIFY_REPLY_THRESHOLD = 0.55;
+
 // ---------------------------------------------------------------------------
 // SPEC 9.3 — audio mappings, timbre, and envelope
 // ---------------------------------------------------------------------------
@@ -143,6 +146,14 @@ export const MODEL_5XX_RETRY_DELAY_MS = 300;
 /** SPEC 11.4 rule 1: exactly one retry on 5xx. 429 and timeouts get none. */
 export const MODEL_5XX_MAX_RETRIES = 1;
 
+/**
+ * SPEC 11.4 rule 1 gives the 429 sentence as "The model is rate limited."; that
+ * read the API's status text aloud, which users heard as a fault (DEV-007). The
+ * behaviour (no retry, fall back to local candidates or fail) is unchanged; only
+ * the words differ. The technical detail is logged, never spoken.
+ */
+export const MODEL_BUSY_SPOKEN_MESSAGE = "I'm busy right now. Try again in a moment.";
+
 /** SPEC 11.4 rule 4 / 5.5 `maxItems`: at most five actions in one batch. */
 export const MAX_ACTIONS = 5;
 
@@ -182,6 +193,31 @@ export const MIC_GRANTED_KEY = "micGranted";
 /** SPEC 4.5: key in chrome.storage.session that holds the serialized session. */
 export const SESSION_STORAGE_KEY = "session";
 
+/** chrome.storage.session key: id of the tab where the last key.down happened (where the command runs). */
+export const ACTIVE_TAB_KEY = "activeTab";
+
+/**
+ * chrome.storage.session flag, honoured by development builds only (compiled out of
+ * production, SPEC 17.3): while true the service worker logs but otherwise ignores
+ * recognizer results and errors, so an e2e run is not at the mercy of what a real,
+ * network-dependent speech service happens to hear.
+ */
+export const QA_IGNORE_STT_KEY = "qa.ignoreStt";
+
+/** SPEC 7.7: delay between the steps of a bounded multi-action batch. */
+export const SEQUENCE_STEP_DELAY_MS = 250;
+
+/**
+ * The "still working" tick (SPEC 9.1 keeps tones and speech apart, so it only
+ * plays while the service worker waits on the model, never during speech): the
+ * first one after this long, so an instant local resolution stays silent ...
+ */
+export const PROCESSING_TICK_FIRST_MS = 500;
+/** ... then one per interval ... */
+export const PROCESSING_TICK_INTERVAL_MS = 800;
+/** ... at most this many (the model timeout is 2500 ms plus one 300 ms retry). */
+export const PROCESSING_TICK_MAX = 6;
+
 /**
  * SPEC 10.3: key in chrome.storage.session for the cached recognition mode.
  * Avoids calling SpeechRecognition.available() on every command.
@@ -204,3 +240,34 @@ export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
  * `[HUMAN: HD-04]` Confirm the search engine before the demo.
  */
 export const SEARCH_TEMPLATE = "https://www.google.com/search?q=%s";
+
+/**
+ * Human-directed replacement for the SPEC 6.18 bookmark row (DEV-006): "save
+ * this page" opens Google Keep with the page title and URL as the note text.
+ * Compile-time constant like SEARCH_TEMPLATE; never derived from page content or
+ * model output. `%s` is replaced with the encodeURIComponent'd note text.
+ */
+export const KEEP_NOTE_TEMPLATE = "https://keep.google.com/#NOTE/?text=%s";
+
+/** Longest search query or tab name that is read aloud back to the user. */
+export const GLOBAL_SPOKEN_NAME_MAX_CHARS = 40;
+
+/** Minimum similarity (0..1) for "switch to X tab" to pick a tab. */
+export const TAB_MATCH_THRESHOLD = 0.5;
+
+// ---------------------------------------------------------------------------
+// SPEC 10.6 & HD-A06 — TTS & ElevenLabs constants
+// ---------------------------------------------------------------------------
+
+/** HD-A06: ElevenLabs ultra-low latency model ID (~75ms latency requirement). */
+export const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_flash_v2_5";
+
+/** HD-A06: ElevenLabs default voice ID (George). */
+export const DEFAULT_ELEVENLABS_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb";
+
+/** SPEC 10.6.3: {name} is truncated to 40 characters for speech. */
+export const CONFIRMATION_NAME_MAX_CHARS = 40;
+
+/** SPEC 10.6.2: utterances longer than 200 characters are split into sentences. */
+export const TTS_CHUNK_MAX_CHARS = 200;
+

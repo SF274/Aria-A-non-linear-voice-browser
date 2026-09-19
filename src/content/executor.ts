@@ -14,6 +14,7 @@ import {
   type ExecuteResult,
   type StepResult,
 } from "../shared/contracts";
+import { playPositionalTick } from "./audio-stubs";
 import { highlightElement } from "./highlight";
 import { buildElementIndex } from "./index-builder";
 import { computeElementNameAndKey, reResolveElement } from "./reresolve";
@@ -127,14 +128,23 @@ export function performVerb(
       htmlEl.focus({ preventScroll: true });
       const fillVal = value ?? "";
 
-      // Trigger prototype descriptor setter if available for reactive frameworks (e.g. React 16+)
-      const proto = Object.getPrototypeOf(element);
-      const protoDescriptor = Object.getOwnPropertyDescriptor(proto, "value");
-      if (protoDescriptor?.set) {
-        protoDescriptor.set.call(element, fillVal);
+      // Write through the native prototype setter, found up the chain. React's
+      // controlled-input tracker shadows `value` on the *instance*; assigning
+      // through the instance updates the tracker, the following `input` event
+      // then looks like "no change" and the framework silently drops the fill.
+      let nativeSetter: ((v: string) => void) | undefined;
+      for (let proto = Object.getPrototypeOf(element); proto; proto = Object.getPrototypeOf(proto)) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
+        if (descriptor?.set) {
+          nativeSetter = descriptor.set;
+          break;
+        }
       }
-      // Also assign directly to invoke any instance-level setter or default property behavior
-      (element as HTMLInputElement | HTMLTextAreaElement).value = fillVal;
+      if (nativeSetter) {
+        nativeSetter.call(element, fillVal);
+      } else {
+        (element as HTMLInputElement | HTMLTextAreaElement).value = fillVal;
+      }
 
       // Dispatch InputEvent("input", { bubbles: true }) followed by Event("change", { bubbles: true })
       let inputEvent: Event;
@@ -145,6 +155,10 @@ export function performVerb(
       }
       element.dispatchEvent(inputEvent);
       element.dispatchEvent(new Event("change", { bubbles: true }));
+      // Give the keyboard back. A field left focused swallows the next hold-to-talk
+      // press as typing (SPEC 6.1), so after a voice fill the user could not speak
+      // again without clicking away. Blur also commits blur-validated forms.
+      htmlEl.blur();
       return { success: true };
     }
 
@@ -351,7 +365,9 @@ export async function executeRequest(
         index: i,
         verb: action.verb,
         elementId: action.elementId,
-        resolvedName: null,
+        // The intended target's indexed name, so the spoken partial-failure
+        // sentence can name the step that failed (SPEC 6.12).
+        resolvedName: targetEntry.name,
         status: "not_found",
         detail: "Element not found during re-resolution",
       });
@@ -396,7 +412,11 @@ export async function executeRequest(
     // Step 4: Apply highlight for 400 ms (non-blocking)
     highlightElement(liveElement, 400);
 
-    // Step 5: Positional tick if playTicks (handled when audio engine exists)
+    // Step 5: Positional tick if playTicks. Fire and forget: audio trouble
+    // must never delay or prevent the action (SPEC 9.6).
+    if (request.playTicks) {
+      void playPositionalTick({ x: targetEntry.x, y: targetEntry.y, role: targetEntry.role });
+    }
     // Step 6: Perform verb
     const outcome = performVerb(action.verb, liveElement, action.value);
 

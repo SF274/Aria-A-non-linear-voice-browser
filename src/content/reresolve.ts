@@ -121,9 +121,14 @@ export function reResolveElement(
     matches.push(el);
   }
 
-  // 3. If exactly one -> use it
+  // 3. If exactly one -> use it, unless it has moved too far. SPEC 12.10
+  //    ("Element moved more than 0.15 normalized units: treat as not_found")
+  //    applies to a lone match as well: acting on a moved element is how a
+  //    voice interface clicks the wrong thing.
   if (matches.length === 1) {
-    return matches[0];
+    const coords = computeElementCoordinates(matches[0], doc);
+    const distance = Math.hypot(coords.x - entry.x, coords.y - entry.y);
+    return distance <= MAX_MOVEMENT_DISTANCE ? matches[0] : null;
   }
 
   // 4. If more than one -> choose nearest. If nearest > 0.15 units away, return null
