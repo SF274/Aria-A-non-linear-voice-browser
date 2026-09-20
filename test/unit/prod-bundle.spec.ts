@@ -26,3 +26,33 @@ describe("dev-only hooks stay out of the production bundle (SPEC 17.3)", () => {
     expect(bundle).toContain("qa.ignoreStt");
   });
 });
+
+/**
+ * F-22 / HD-13. The GPTZero key lives on the same side of the boundary as the
+ * Gemini key (R2.5): the service worker calls the classifier, and nothing about
+ * it is compiled into the script that runs inside a page.
+ */
+describe("the synthetic-text detector stays in the service worker (HD-13, R2.5)", () => {
+  const prodContent = resolve(root, "dist", "src", "content", "index.js");
+
+  it.skipIf(!existsSync(prodSw))("the service worker is the one that talks to GPTZero", () => {
+    expect(readFileSync(prodSw, "utf-8")).toContain("api.gptzero.me");
+  });
+
+  it.skipIf(!existsSync(prodSw))("the GPT_ZERO env var never reaches a bundle (HD-14)", () => {
+    // It is a script-only variable, like COHERE_API_KEY. The extension takes its
+    // key from the options page; a build that inlined the env var would put a
+    // live key in a shipped artifact.
+    expect(readFileSync(prodSw, "utf-8")).not.toContain("GPT_ZERO");
+  });
+
+  it.skipIf(!existsSync(prodContent))("the content script cannot call it", () => {
+    const bundle = readFileSync(prodContent, "utf-8");
+    expect(bundle).not.toContain("api.gptzero.me");
+    expect(bundle).not.toContain("x-api-key");
+    // `gptZeroApiKey` as a *name* is in this bundle, and that is not a leak:
+    // `SettingsSchema` is shared and already carries `geminiApiKey` and
+    // `elevenLabsApiKey` the same way. What must not be here is the means to
+    // use a key — the endpoint and the header — and neither is.
+  });
+});

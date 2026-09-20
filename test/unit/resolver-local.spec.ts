@@ -357,6 +357,40 @@ describe("Local Resolver — local.ts & Gate IG-07 (SPEC 7.2.4, 16 F-05)", () =>
     expect(resultInto.target?.name).toBe("Email address");
   });
 
+  it("keeps check and uncheck as their own verbs on a checkbox (HD-14)", () => {
+    const off = resolveLocal("uncheck non-stop only", demoIndex);
+    expect(off.outcome).toBe("CONFIDENT");
+    expect(off.target?.name).toBe("Non-stop only");
+    expect(off.action?.verb).toBe("uncheck");
+
+    const on = resolveLocal("check morning departures", demoIndex);
+    expect(on.outcome).toBe("CONFIDENT");
+    expect(on.target?.name).toBe("Morning departures");
+    expect(on.action?.verb).toBe("check");
+
+    // The lexicon's other words for the same two states.
+    expect(resolveLocal("turn off non-stop only", demoIndex).action?.verb).toBe("uncheck");
+    expect(resolveLocal("turn on refundable fares", demoIndex).action?.verb).toBe("check");
+
+    // A bare click on a checkbox is still a click: the user asked to toggle it.
+    expect(resolveLocal("click non-stop only", demoIndex).action?.verb).toBe("click");
+  });
+
+  it("falls back to the default verb when a toggle word lands on something with no state (HD-14)", () => {
+    // The lexicon reads the leading "enable" and "turn off" as toggle verbs,
+    // but a button and a link have no state to set. Without the fallback, SPEC
+    // 7.6.1 rule 8 refuses the batch out loud instead of pressing the button.
+    const button = resolveLocal("enable search flights", demoIndex);
+    expect(button.outcome).toBe("CONFIDENT");
+    expect(button.target?.name).toBe("Search flights");
+    expect(button.action?.verb).toBe("click");
+
+    const link = resolveLocal("turn off help", demoIndex);
+    expect(link.outcome).toBe("CONFIDENT");
+    expect(link.target?.role).toBe("link");
+    expect(link.action?.verb).toBe("click");
+  });
+
   it("defaults to click for button/link when no verb is present, focus otherwise (SPEC 7.2.2)", () => {
     // "flights" has no verb; flights is a link -> default verb is click
     const resultLink = resolveLocal("flights", demoIndex);

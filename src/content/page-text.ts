@@ -10,7 +10,19 @@
  * only ever spoken (SPEC 8.5); nothing here reaches the element resolver.
  */
 
-import { sanitizeForPrompt } from "../shared/normalize";
+import { sanitizeForPrompt, sanitizeForPromptKeepingBreaks } from "../shared/normalize";
+
+export interface PageTextOptions {
+  /**
+   * HD-14: keep the blank lines between blocks instead of collapsing them.
+   *
+   * The Q&A prompt does not care — `buildAnswerRequestBody` re-sanitizes and
+   * collapses whatever it is given — but the synthetic-text classifier segments
+   * paragraphs on those breaks, and without them a whole page arrives as one
+   * paragraph and per-paragraph detection has nothing to work with.
+   */
+  preserveParagraphs?: boolean;
+}
 
 export interface PageText {
   title: string;
@@ -31,7 +43,8 @@ function visibleText(root: Element): string {
   return clone.textContent ?? "";
 }
 
-export function extractPageText(doc: Document, maxChars: number): PageText {
+export function extractPageText(doc: Document, maxChars: number, options: PageTextOptions = {}): PageText {
+  const clean = options.preserveParagraphs ? sanitizeForPromptKeepingBreaks : sanitizeForPrompt;
   const title = sanitizeForPrompt(doc.title ?? "", 200);
 
   const headings: string[] = [];
@@ -42,7 +55,7 @@ export function extractPageText(doc: Document, maxChars: number): PageText {
   });
 
   const root = doc.querySelector("main,[role='main']") ?? doc.body;
-  const body = root ? sanitizeForPrompt(visibleText(root)) : "";
+  const body = root ? clean(visibleText(root)) : "";
 
   const head = [title && `Title: ${title}`, headings.length > 0 && `Headings: ${headings.join(" | ")}`]
     .filter(Boolean)

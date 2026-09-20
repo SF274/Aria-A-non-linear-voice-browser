@@ -905,7 +905,7 @@ test.describe("Suite F: global commands (tabs, search, save)", () => {
     const demoUrl = q.page.url();
 
     // Two tabs in the window: the demo page and the harness's extension page.
-    await say(q, "Next tab.", "ECHO — Options.");
+    await say(q, "Next tab.", "ECHO Options.");
     expect(await activeUrl(q)).toContain("options.html");
     await say(q, "Previous tab.", "Northbound Air.");
     expect(await activeUrl(q)).toBe(demoUrl);
@@ -960,6 +960,17 @@ test.describe("Suite G: page questions, date/time, tabs", () => {
   }
   const bodyOf = (call: GeminiCall): Body => call.body as unknown as Body;
   const isResolver = (call: GeminiCall): boolean => bodyOf(call).generationConfig.responseMimeType === "application/json";
+  /**
+   * The answer prompt's parts are addressed by name, not by position. F-22 added
+   * a fourth (`<content_authenticity>`) between the context and the page text,
+   * and anything that counted on page text being index 2 silently read the wrong
+   * part rather than failing loudly.
+   */
+  const partNamed = (call: GeminiCall, tag: string): string => {
+    const part = bodyOf(call).contents[0].parts.find((p) => p.text.startsWith(`<${tag}>`));
+    if (!part) throw new Error(`no <${tag}> part in the request body`);
+    return part.text;
+  };
   const answerCalls = (q: Qa): GeminiCall[] => q.geminiCalls.filter((c) => !isResolver(c));
   type Settings = Parameters<typeof launchQa>[0]["settings"];
 
@@ -972,7 +983,7 @@ test.describe("Suite G: page questions, date/time, tabs", () => {
         await fulfillGemini(route, { actions: [{ verb: "click", elementId: idOf(els, /destination/i) }], confidence: 0.95 });
         return;
       }
-      const pageText = bodyOf(call).contents[0].parts[2].text;
+      const pageText = partNamed(call, "page_text");
       const text = pageText.includes("runway lights")
         ? "It leads to a page about runway lights."
         : pageText.includes("Airport history")
@@ -1043,7 +1054,7 @@ test.describe("Suite G: page questions, date/time, tabs", () => {
     const calls = answerCalls(q);
     expect(calls).toHaveLength(1);
     const body = bodyOf(calls[0]);
-    // Plain text, three separate parts, page text from the real page, and the date.
+    // Plain text, separate parts, page text from the real page, and the date.
     expect(body.generationConfig.responseMimeType).toBe("text/plain");
     expect(body.generationConfig.responseSchema).toBeUndefined();
     const parts = body.contents[0].parts.map((p) => p.text);
@@ -1052,7 +1063,10 @@ test.describe("Suite G: page questions, date/time, tabs", () => {
     expect(parts[1]).toContain('"title":"Northbound Air"');
     expect(parts[1]).toContain("127.0.0.1");
     expect(parts[1]).not.toContain("http");
-    expect(parts[2]).toContain("Northbound Air Flight Booking");
+    expect(partNamed(calls[0], "page_text")).toContain("Northbound Air Flight Booking");
+    // F-22: the authenticity report is its own part, ahead of the untrusted page text.
+    expect(parts[2]).toMatch(/^<content_authenticity>/);
+    expect(parts[3]).toMatch(/^<page_text>/);
     // The system instruction is the fixed constant: no page text, no date.
     expect(body.systemInstruction.parts[0].text).not.toContain("Northbound");
     // Inert: the answer never went near the executor.
@@ -1090,7 +1104,7 @@ test.describe("Suite G: page questions, date/time, tabs", () => {
     // The harness window holds the demo page, the options page and a blank tab.
     expect(tabs[0]).toMatch(/^You have \d+ tabs open\. 1, /);
     expect(tabs[0]).toContain("Northbound Air, this one");
-    expect(tabs[0]).toContain("ECHO — Options");
+    expect(tabs[0]).toContain("ECHO Options");
 
     expect((await ask(q, "How many tabs do I have?"))[0]).toMatch(/^You have \d+ tabs open\.$/);
     expect(q.geminiCalls).toHaveLength(0);
@@ -1104,7 +1118,7 @@ test.describe("Suite G: page questions, date/time, tabs", () => {
     expect(await ask(q, "Summarize the airport tab.")).toEqual(["This tab is about the history of airports."]);
 
     const parts = bodyOf(answerCalls(q)[0]).contents[0].parts.map((p) => p.text);
-    expect(parts[2]).toContain("Airport history");
+    expect(partNamed(answerCalls(q)[0], "page_text")).toContain("Airport history");
     expect(parts[1]).toContain('"page":{"title":"Airport - Wikipedia"');
     expect(parts[1]).toContain("Northbound Air"); // and it knows about the other tab too
     // We read the tab; we did not move the user.

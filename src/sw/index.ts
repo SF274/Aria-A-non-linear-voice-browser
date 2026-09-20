@@ -268,6 +268,14 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 
       if (isFinal) {
         await updateTranscript(null, transcript);
+        // Release the microphone the moment the transcript is final, rather
+        // than waiting for continuous=false to end the session on its own.
+        // Chrome holds the mic open until then, and an open mic holds a
+        // Bluetooth headset in the HFP profile (mono, ~16 kHz), so the spoken
+        // answer starts playing through a hands-free channel and only clears
+        // once Windows switches back to A2DP. The result is already final, so
+        // there is nothing left for the recognizer to deliver.
+        sendToOffscreen("stt.stop", {});
         await transitionTo("RESOLVING", { finalTranscript: transcript });
         console.log("[ECHO SW] Final transcript:", transcript);
         void runPipeline(transcript);

@@ -266,6 +266,38 @@ export function normalizeTranscript(raw: string): NormalizedTranscript {
   };
 }
 
+/** The prompt part delimiters no page-derived string may contain (SPEC 8.4 rule 4). */
+const PROMPT_TAG_DELIMITERS =
+  /<\/?(?:page_elements|user_command|page_text|browser_context|user_request|content_authenticity)>/gi;
+
+/**
+ * SPEC 8.4's sanitization with paragraph breaks left intact (HD-14).
+ *
+ * `sanitizeForPrompt` collapses every whitespace run, newlines included, which
+ * is right for a prompt and wrong for a classifier: GPTZero segments paragraphs
+ * on blank lines, so text that has been through the normal path arrives as one
+ * undifferentiated blob and comes back as a single paragraph. Per-paragraph
+ * detection needs the breaks, so this keeps them — and only them.
+ *
+ * Every other rule is unchanged: control characters go (except the newlines we
+ * are deliberately keeping), horizontal whitespace collapses, tag delimiters are
+ * stripped. Runs of blank lines are capped at one so a spacer-heavy page cannot
+ * pad the sample.
+ */
+export function sanitizeForPromptKeepingBreaks(s: string, maxLength?: number): string {
+  if (!s) return "";
+  // eslint-disable-next-line no-control-regex -- SPEC 8.4 rule 1, minus \n, which carries the paragraph structure
+  let res = s.replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, "");
+  res = res.replace(/[^\S\n]+/g, " "); // horizontal whitespace only
+  res = res.replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n");
+  res = res.replace(PROMPT_TAG_DELIMITERS, "");
+  res = res.replace(/[^\S\n]+/g, " ").trim();
+  if (typeof maxLength === "number" && maxLength > 0 && res.length > maxLength) {
+    res = res.slice(0, maxLength).trim();
+  }
+  return res;
+}
+
 /**
  * Sanitizes strings for model prompts per SPEC 8.4:
  * 1. Strip all C0 and C1 control characters
@@ -286,7 +318,7 @@ export function sanitizeForPrompt(s: string, maxLength?: number): string {
     res = res.slice(0, maxLength);
   }
   // 4. Strip tag delimiters case-insensitively (the resolver's and the Q&A prompt's)
-  res = res.replace(/<\/?(?:page_elements|user_command|page_text|browser_context|user_request)>/gi, "");
+  res = res.replace(PROMPT_TAG_DELIMITERS, "");
   // 5. Collapse whitespace again and trim
   res = res.replace(/\s+/g, " ").trim();
   // Ensure length constraint holds after trimming

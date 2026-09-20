@@ -10,13 +10,35 @@ import { executeRequest } from "./executor";
 import { buildElementIndex } from "./index-builder";
 import { createIndexObserver } from "./observer";
 import { initHoldToTalk } from "./hold-to-talk";
-import { getAudioContext, playProcessingTick } from "./audio-stubs";
+import {
+  clearAudioLog,
+  followAudioSetting,
+  getAudioContext,
+  isMutationAudioEnabled,
+  getAudioLog,
+  beginActivity,
+  endActivity,
+} from "./audio/engine";
+import { startMutationSonification } from "./audio/mutation";
+import { playProcessingTick } from "./audio/transport";
 import { clearHighlights, highlightCandidates } from "./highlight";
 import { reResolveElement } from "./reresolve";
 import { extractPageText, type PageText } from "./page-text";
-import { PAGE_TEXT_QA_MAX_CHARS } from "../shared/constants";
+import {
+  PAGE_TEXT_QA_MAX_CHARS,
+  TTS_FADE_IN_MS,
+  TTS_FADE_OUT_MS,
+  TTS_LIMITER,
+  TTS_PLAYBACK_GAIN,
+} from "../shared/constants";
 
-let activeTtsSource: AudioBufferSourceNode | null = null;
+/**
+ * The currently playing ElevenLabs clip, with the GainNode it runs through.
+ * The gain gives the clip a short fade in (a buffer started at full amplitude
+ * cracks) and lets an interruption fade out instead of cutting to silence
+ * mid-waveform. The limiter after it holds the hot opening below clipping.
+ */
+let activeTts: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
 
 /**
  * Bumped by every tts.stop and every tts.play. A tts.play remembers the value it
@@ -26,6 +48,36 @@ let activeTtsSource: AudioBufferSourceNode | null = null;
  * the confirmation then plays over the user who just interrupted it.
  */
 let ttsEpoch = 0;
+
+/**
+ * Stop the playing clip, fading out over TTS_FADE_OUT_MS first so the cut does
+ * not land mid-waveform and click. Interruption is on every key.down
+ * (SPEC 10.6.4), so this runs constantly and must stay silent about failure.
+ * source.onended still fires after the scheduled stop, which answers tts.play.
+ */
+function stopActiveTts(): void {
+  const playing = activeTts;
+  if (!playing) return;
+  activeTts = null;
+
+  const { source, gain } = playing;
+  try {
+    const ctx = gain.context;
+    const end = ctx.currentTime + TTS_FADE_OUT_MS / 1000;
+    gain.gain.cancelScheduledValues(ctx.currentTime);
+    // Hold the level the fade-in had actually reached, then ramp down from it.
+    gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0, end);
+    source.stop(end);
+  } catch {
+    // Context is dead or the source already stopped: cut it hard instead.
+    try {
+      source.stop();
+    } catch {
+      // Already stopped.
+    }
+  }
+}
 
 // Cached index per SPEC 6.5 (under 1500 ms and not invalidated by mutation)
 let cachedIndex: ElementIndex | null = null;
@@ -58,13 +110,37 @@ export function getOrBuildIndex(force = false): ElementIndex {
   return cachedIndex;
 }
 
+/**
+ * F-17 (SPEC 9.8): the page's own changes, made audible. Attached beside the
+ * index observer rather than inside it, because the two answer different
+ * questions — the index observer asks "what can be acted on now", the sonifier
+ * asks "what just happened, and where". It rides on `index.changed` for the
+ * structural layer and keeps its own counting observer for text churn, which
+ * never reaches the index at all.
+ */
+let mutationSonifier: ReturnType<typeof startMutationSonification> | null = null;
+
 // Start mutation observer on page load per SPEC 12.9
 if (typeof document !== "undefined") {
   try {
+    followAudioSetting();
+    // HD-12: off unless `settings.mutationAudio` is explicitly true. The engine
+    // and every test stay in place; the observer simply never attaches, so a
+    // page that is not sonified also pays nothing for the feature.
+    void isMutationAudioEnabled().then((enabled) => {
+      if (enabled && !mutationSonifier) mutationSonifier = startMutationSonification();
+    });
     createIndexObserver({
-      onIndexChanged: (_event, newIndex) => {
+      onIndexChanged: (event, newIndex) => {
         cachedIndex = newIndex;
         lastIndexTime = Date.now();
+        // Never let a cue break indexing: a throw here would take the observer
+        // callback down with it (SPEC 9.6).
+        try {
+          mutationSonifier?.onIndexChanged(event, newIndex);
+        } catch {
+          // Degrade to silence.
+        }
       },
     });
   } catch (err) {
@@ -161,14 +237,18 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
       // Handle page.text (SPEC 11.6 / 11.7): readable text for a spoken summary or answer.
       if (message.type === "page.text") {
-        const payload = message.payload as { maxChars?: number } | undefined;
+        const payload = message.payload as { maxChars?: number; preserveParagraphs?: boolean } | undefined;
         const maxChars = Math.min(Math.max(payload?.maxChars ?? 0, 0) || PAGE_TEXT_QA_MAX_CHARS, PAGE_TEXT_QA_MAX_CHARS);
         const response: Envelope<PageText> = {
           ns: ENVELOPE_NS,
           target: "sw",
           type: "page.text",
           reqId: message.reqId,
-          payload: extractPageText(document, maxChars),
+          // HD-14: the service worker asks for paragraph breaks when the text is
+          // also going to the synthetic-text classifier.
+          payload: extractPageText(document, maxChars, {
+            preserveParagraphs: payload?.preserveParagraphs === true,
+          }),
         };
         sendResponse(response);
         return true;
@@ -186,7 +266,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
       // Handle tts.play (HD-A06 dual-engine ElevenLabs playback)
       if (message.type === "tts.play") {
-        const payload = message.payload as { audioBase64?: string } | undefined;
+        const payload = message.payload as { audioBase64?: string; pan?: number } | undefined;
         if (!payload?.audioBase64) {
           sendResponse({ ok: false, error: "Missing audioBase64" });
           return false;
@@ -206,14 +286,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
             }
 
             // Stop any currently playing TTS source
-            if (activeTtsSource) {
-              try {
-                activeTtsSource.stop();
-              } catch {
-                // Ignore errors from already stopped sources
-              }
-              activeTtsSource = null;
-            }
+            stopActiveTts();
 
             const binaryString = atob(payload.audioBase64!);
             const len = binaryString.length;
@@ -230,19 +303,62 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
             }
             const source = ctx.createBufferSource();
             source.buffer = audioBuffer;
-            source.connect(ctx.destination);
-            activeTtsSource = source;
+
+            // Ramp up over TTS_FADE_IN_MS rather than starting at full level, so
+            // the first sample does not click.
+            const gain = ctx.createGain();
+            const t0 = ctx.currentTime;
+            gain.gain.setValueAtTime(0, t0);
+            gain.gain.linearRampToValueAtTime(
+              TTS_PLAYBACK_GAIN,
+              t0 + TTS_FADE_IN_MS / 1000
+            );
+
+            // Brick-wall the peaks. The opening clause runs hot enough to clip
+            // against the destination; normal speech sits under the threshold
+            // and passes through at full level. See TTS_LIMITER.
+            const limiter = ctx.createDynamicsCompressor();
+            limiter.threshold.setValueAtTime(TTS_LIMITER.thresholdDb, t0);
+            limiter.knee.setValueAtTime(TTS_LIMITER.kneeDb, t0);
+            limiter.ratio.setValueAtTime(TTS_LIMITER.ratio, t0);
+            limiter.attack.setValueAtTime(TTS_LIMITER.attackSec, t0);
+            limiter.release.setValueAtTime(TTS_LIMITER.releaseSec, t0);
+
+            // HD-12 ("spatial links"): place the voice where the thing it is
+            // talking about actually is. The panner goes *after* the limiter so
+            // the limiter still sees the whole signal and only decides level;
+            // panning before it would let a hard-left clip duck a hard-right
+            // one. A pan of 0 is the centre every other utterance uses, so the
+            // node is only built when there is somewhere to put the voice.
+            const pan = typeof payload.pan === "number" ? payload.pan : 0;
+            source.connect(gain);
+            gain.connect(limiter);
+            if (pan !== 0 && typeof ctx.createStereoPanner === "function") {
+              const panner = ctx.createStereoPanner();
+              panner.pan.setValueAtTime(Math.min(1, Math.max(-1, pan)), t0);
+              limiter.connect(panner);
+              panner.connect(ctx.destination);
+            } else {
+              limiter.connect(ctx.destination);
+            }
+            activeTts = { source, gain };
 
             // The response is sent when playback ends (or is stopped), so the
             // service worker can tell "still speaking" from "done".
             source.onended = () => {
-              if (activeTtsSource === source) {
-                activeTtsSource = null;
+              if (activeTts?.source === source) {
+                activeTts = null;
+              }
+              try {
+                gain.disconnect();
+                limiter.disconnect();
+              } catch {
+                // Already torn down.
               }
               sendResponse({ ok: true });
             };
 
-            source.start(0);
+            source.start(t0);
           } catch (err) {
             console.warn("[ECHO] Failed to decode/play ElevenLabs audio:", err);
             sendResponse({ ok: false, error: String(err) });
@@ -254,14 +370,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       // Handle tts.stop (SPEC §10.6.4 interruption)
       if (message.type === "tts.stop") {
         ttsEpoch++;
-        if (activeTtsSource) {
-          try {
-            activeTtsSource.stop();
-          } catch {
-            // Ignore errors from already stopped sources
-          }
-          activeTtsSource = null;
-        }
+        stopActiveTts();
         sendResponse({ ok: true });
         return true;
       }
@@ -276,11 +385,30 @@ if (typeof window !== "undefined") {
   initHoldToTalk();
 }
 
+/**
+ * What an e2e test can reach. A content script runs in an isolated world, so a
+ * page cannot see any of this; the audio tests get at it by injecting the
+ * bundle into the main world deliberately (see `test/e2e/mutation-audio.spec.ts`).
+ * The audio log holds coordinates, frequencies and gains — never page content.
+ */
 declare global {
   interface Window {
     __ECHO_BUILD_INDEX__?: typeof buildElementIndex;
     __ECHO_GET_INDEX__?: typeof getOrBuildIndex;
     __ECHO_EXECUTE_REQUEST__?: typeof executeRequest;
+    __ECHO_AUDIO__?: {
+      log: typeof getAudioLog;
+      clear: typeof clearAudioLog;
+      beginActivity: typeof beginActivity;
+      endActivity: typeof endActivity;
+      /**
+       * Start mutation sonification regardless of `settings.mutationAudio`.
+       * The feature ships off (HD-12), and a test that had to write extension
+       * storage to reach it would be testing the options page instead of the
+       * sonifier.
+       */
+      startMutationAudio: () => void;
+    };
   }
 }
 
@@ -289,6 +417,15 @@ if (typeof window !== "undefined") {
   window.__ECHO_BUILD_INDEX__ = buildElementIndex;
   window.__ECHO_GET_INDEX__ = getOrBuildIndex;
   window.__ECHO_EXECUTE_REQUEST__ = executeRequest;
+  window.__ECHO_AUDIO__ = {
+    log: getAudioLog,
+    clear: clearAudioLog,
+    beginActivity,
+    endActivity,
+    startMutationAudio: () => {
+      if (!mutationSonifier) mutationSonifier = startMutationSonification();
+    },
+  };
 }
 
 // SPEC 16, F-01: the content script logs a single readiness line on inject.

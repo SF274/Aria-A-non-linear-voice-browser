@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkSttMode,
@@ -7,6 +9,7 @@ import {
   runGateIG06,
   runGateIG10,
   saveSettings,
+  testGptZeroKey,
 } from "../../src/pages/options";
 
 describe("Options page DOM and storage unit tests (SPEC 5.13, 8.6, 10.3, 16 F-21)", () => {
@@ -21,6 +24,10 @@ describe("Options page DOM and storage unit tests (SPEC 5.13, 8.6, 10.3, 16 F-21
       </select>
       <input id="use-local-tts" type="checkbox" checked>
       <input id="elevenlabs-api-key" type="password">
+      <input id="ai-detection" type="checkbox" checked>
+      <input id="gptzero-api-key" type="password">
+      <button id="btn-test-gptzero"></button>
+      <div id="gptzero-status"></div>
       <button id="btn-save">Save Settings</button>
       <div id="save-status"></div>
       <div id="stt-mode-display"></div>
@@ -266,5 +273,134 @@ describe("Options page DOM and storage unit tests (SPEC 5.13, 8.6, 10.3, 16 F-21
     const block = await runGateIG10();
     expect(block).toContain("### IG-10 — Convex write succeeds from an MV3 service worker");
     expect(block).toContain("- **Blocks:** F-18");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-22 / HD-13
+// ---------------------------------------------------------------------------
+
+describe("GPTZero settings and key check (HD-13, F-22)", () => {
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <input id="ai-detection" type="checkbox" checked>
+      <input id="gptzero-api-key" type="password">
+      <button id="btn-test-gptzero"></button>
+      <div id="gptzero-status"></div>
+      <div id="save-status"></div>
+    `;
+    let store: Record<string, unknown> = {};
+    (globalThis as unknown as { chrome: unknown }).chrome = {
+      storage: {
+        local: {
+          get: vi.fn(async (k?: string) => (k ? { [k]: store[k] } : { ...store })),
+          set: vi.fn(async (items: Record<string, unknown>) => {
+            store = { ...store, ...items };
+          }),
+        },
+      },
+    };
+  });
+
+  it("persists the key and the toggle", async () => {
+    (document.getElementById("gptzero-api-key") as HTMLInputElement).value = "  gptzero-secret  ";
+    (document.getElementById("ai-detection") as HTMLInputElement).checked = false;
+    const saved = await saveSettings();
+    expect(saved.gptZeroApiKey).toBe("gptzero-secret");
+    expect(saved.aiDetection).toBe(false);
+    expect((await loadSettings()).gptZeroApiKey).toBe("gptzero-secret");
+  });
+
+  it("stores null rather than an empty string when the field is blank", async () => {
+    expect((await saveSettings()).gptZeroApiKey).toBeNull();
+  });
+
+  it("keeps detection on when the checkbox is missing from the page", async () => {
+    document.getElementById("ai-detection")?.remove();
+    expect((await saveSettings()).aiDetection).toBe(true);
+  });
+
+  it("says plainly that there is no key, without calling anything", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const message = await testGptZeroKey();
+    expect(message).toContain("No GPTZero key");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("reports the score and the warning the user would hear", async () => {
+    (document.getElementById("gptzero-api-key") as HTMLInputElement).value = "k";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ documents: [{ class_probabilities: { ai: 0.94 }, document_classification: "AI_ONLY" }] }),
+        { status: 200 }
+      )
+    );
+    const message = await testGptZeroKey();
+    expect(message).toContain("94%");
+    expect(message).toContain("AI_ONLY");
+    expect(message).toContain("Heads up");
+    vi.restoreAllMocks();
+  });
+
+  it("reports a rejected key without throwing", async () => {
+    (document.getElementById("gptzero-api-key") as HTMLInputElement).value = "bad";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("no", { status: 403 }));
+    const message = await testGptZeroKey();
+    expect(message).toContain("rejected");
+    expect(message).toContain("nothing else breaks");
+    vi.restoreAllMocks();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The shipped options.html, read from disk: layout facts the DOM fixtures above
+// cannot catch, because they build their own markup.
+// ---------------------------------------------------------------------------
+
+describe("options.html layout", () => {
+  const html = readFileSync(
+    resolve(import.meta.dirname, "..", "..", "src", "pages", "options.html"),
+    "utf-8"
+  );
+
+  /**
+   * Every settings input has to come before the one Save button.
+   *
+   * This is a regression test for a real bug: the Content Authenticity section
+   * was added below the Save button, which lived inside the Gemini section. The
+   * GPTZero key looked as though it had been saved, because "Test key on a
+   * sample" reads the input directly and worked, but Save was above the field
+   * and nothing was ever written to storage.
+   */
+  it("puts every settings input above the Save button", () => {
+    const save = html.indexOf('id="btn-save"');
+    expect(save).toBeGreaterThan(-1);
+    for (const id of [
+      "gemini-api-key",
+      "gemini-model",
+      "verbosity",
+      "use-local-tts",
+      "spatial-links",
+      "mutation-audio",
+      "elevenlabs-api-key",
+      "ai-detection",
+      "gptzero-api-key",
+    ]) {
+      const at = html.indexOf(`id="${id}"`);
+      expect(at, `#${id} is missing from options.html`).toBeGreaterThan(-1);
+      expect(at, `#${id} appears after the Save button, so it cannot be saved`).toBeLessThan(save);
+    }
+  });
+
+  it("has exactly one Save button", () => {
+    expect(html.match(/id="btn-save"/g)).toHaveLength(1);
+  });
+
+  it("uses no em dashes in anything it displays", () => {
+    // The gate-diagnostics log is generated in options.ts and deliberately keeps
+    // the INTEGRATION_GATES.md heading format; this covers the page's own copy.
+    expect(html).not.toContain("—");
+    expect(html).not.toContain("&mdash;");
   });
 });

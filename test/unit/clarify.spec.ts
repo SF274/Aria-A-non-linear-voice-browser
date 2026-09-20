@@ -9,6 +9,7 @@ import {
   formatClarifyingQuestion,
   inDocumentOrder,
   resolveClarificationReply,
+  verbForClarifiedTarget,
 } from "../../src/sw/resolver/clarify";
 
 function entry(over: Partial<ElementIndexEntry> & Pick<ElementIndexEntry, "id" | "name">): ElementIndexEntry {
@@ -111,5 +112,37 @@ describe("resolveClarificationReply (SPEC 7.5.2)", () => {
 
   it("a name that matches both candidates equally is unresolved rather than guessed", () => {
     expect(resolveClarificationReply("download", candidates).kind).toBe("unresolved");
+  });
+});
+
+describe("verbForClarifiedTarget (HD-14)", () => {
+  const box = entry({ id: "el_5", name: "Non-stop only", role: "checkbox", tag: "input" });
+  const button = entry({ id: "el_10", name: "Search flights" });
+  const field = entry({ id: "el_7", name: "From", role: "textbox", tag: "input" });
+
+  it("acts on the clarified box with the verb the command named", () => {
+    expect(verbForClarifiedTarget(box, "uncheck")).toBe("uncheck");
+    expect(verbForClarifiedTarget(box, "check")).toBe("check");
+  });
+
+  it("falls back to the SPEC 7.2.2 default when the command named no verb", () => {
+    expect(verbForClarifiedTarget(box)).toBe("click");
+    expect(verbForClarifiedTarget(button)).toBe("click");
+    expect(verbForClarifiedTarget(field)).toBe("focus");
+  });
+
+  it("discards a pinned verb the chosen candidate cannot take (SPEC 7.6.2)", () => {
+    // "Uncheck one of these" answered with a button: uncheck is invalid there,
+    // and refusing the whole batch would be a worse answer than pressing it.
+    expect(verbForClarifiedTarget(button, "uncheck")).toBe("click");
+    expect(verbForClarifiedTarget(button, "fill")).toBe("click");
+    // `fill` and `select` need a value, and the reply carries none: SPEC 7.6.1
+    // rule 6 would refuse the batch. Focus the field and let the user retype.
+    expect(verbForClarifiedTarget(field, "fill")).toBe("focus");
+    expect(verbForClarifiedTarget(field, "scrollTo")).toBe("scrollTo");
+    // A radio cannot be unchecked at all (SPEC 7.6.2).
+    const radio = entry({ id: "el_9", name: "Economy", role: "radio", tag: "input" });
+    expect(verbForClarifiedTarget(radio, "uncheck")).toBe("click");
+    expect(verbForClarifiedTarget(radio, "check")).toBe("check");
   });
 });

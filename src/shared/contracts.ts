@@ -351,6 +351,14 @@ export const ClarificationStateSchema = z.object({
   createdAt: z.number(),
   /** createdAt + 15000. */
   expiresAt: z.number(),
+  /**
+   * HD-14: the verb the original command named, carried across the question so
+   * the reply executes what was asked. "Uncheck one of these two boxes" must
+   * still be an uncheck after "the second one", not the default click, whose
+   * direction depends on the state the box happens to be in. Absent when the
+   * command named no verb.
+   */
+  verb: VerbSchema.optional(),
 });
 
 export type ClarificationState = z.infer<typeof ClarificationStateSchema>;
@@ -461,6 +469,29 @@ export const SettingsSchema = z.object({
   useLocalTts: z.boolean().default(true),
   /** ElevenLabs API key for cloud TTS. Read from chrome.storage.local. */
   elevenLabsApiKey: z.string().nullable().default(null),
+  /**
+   * HD-12: mutation sonification (F-17). **Default false** — the human listened
+   * to it and did not want the page making noise as it changes. The engine and
+   * its tests stay; nothing starts unless this is turned on.
+   */
+  mutationAudio: z.boolean().default(false),
+  /**
+   * HD-12: pan spoken answers to where the thing they are about actually is on
+   * the page, so "Clicked Search flights" arrives from the left if the button
+   * is on the left. Default true. Only has an effect on the ElevenLabs path —
+   * `chrome.tts` output cannot be routed into a Web Audio graph (SPEC 9.1).
+   */
+  spatialLinks: z.boolean().default(true),
+  /**
+   * HD-13 (F-22): GPTZero key for synthetic-text detection. Service worker only,
+   * same boundary as `geminiApiKey` (R2.5). Null disables detection outright.
+   */
+  gptZeroApiKey: z.string().nullable().default(null),
+  /**
+   * HD-13 (F-22): warn before reading a page that scores as A.I. generated.
+   * Default true. Turning it off stops page text reaching GPTZero at all.
+   */
+  aiDetection: z.boolean().default(true),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -601,3 +632,66 @@ export const MESSAGE_TYPES = [
 ] as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[number];
+
+// ---------------------------------------------------------------------------
+// 5.15 AuthenticityVerdict (F-22, HD-13)
+// ---------------------------------------------------------------------------
+
+/**
+ * What the detector concluded about a page's text.
+ *
+ *   high  — most of it scores as machine written
+ *   mixed — some of it does
+ *   clean — it does not
+ *
+ * There is no "unknown" band. A detector that did not run, timed out, has no
+ * key, or returned something unreadable produces `null`, not a verdict, and the
+ * answer goes out exactly as it would have before (SPEC 19.3: no new network
+ * dependency on the demo path).
+ */
+export const AUTHENTICITY_LEVELS = ["clean", "mixed", "high"] as const;
+
+export const AuthenticityLevelSchema = z.enum(AUTHENTICITY_LEVELS);
+
+export type AuthenticityLevel = z.infer<typeof AuthenticityLevelSchema>;
+
+/**
+ * One paragraph that scored above the flag threshold. HD-14: a page is not one
+ * number. A mostly human article with a single machine-written section is the
+ * case that matters most, and a whole-document probability is exactly the
+ * statistic that hides it.
+ */
+export const FlaggedSectionSchema = z.object({
+  /**
+   * The paragraph's opening words, sanitized and capped, so the model can name
+   * which part of the page it means. Null when the response carried paragraph
+   * scores but no sentence text to rebuild them from.
+   */
+  excerpt: z.string().nullable(),
+  /** P(machine written) for this paragraph, 0..1. */
+  aiProbability: z.number().min(0).max(1),
+  /** Length of the paragraph in characters. */
+  chars: z.number().int().min(0),
+  /** 1-based position among the eligible paragraphs, for "the third section". */
+  position: z.number().int().min(1),
+});
+
+export type FlaggedSection = z.infer<typeof FlaggedSectionSchema>;
+
+export const AuthenticityVerdictSchema = z.object({
+  level: AuthenticityLevelSchema,
+  /** P(machine written) for the whole document, 0..1. */
+  aiProbability: z.number().min(0).max(1),
+  /** GPTZero's own document_classification, when it sent one. Diagnostic only. */
+  classification: z.string().nullable(),
+  /** Characters actually classified, which is the sample, not the page. */
+  sampledChars: z.number().int().min(0),
+  /** Paragraphs at or above the flag threshold and long enough to judge (HD-14). */
+  flagged: z.array(FlaggedSectionSchema).default([]),
+  /** Paragraphs that were long enough to be judged at all. */
+  paragraphsConsidered: z.number().int().min(0).default(0),
+  /** Characters inside the flagged paragraphs, for "how much of the page". */
+  flaggedChars: z.number().int().min(0).default(0),
+});
+
+export type AuthenticityVerdict = z.infer<typeof AuthenticityVerdictSchema>;

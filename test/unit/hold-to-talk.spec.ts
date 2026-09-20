@@ -2,7 +2,7 @@
  * Hold-to-talk unit tests — SPEC §6.1
  *
  * Tests key capture, editable-target guard, and message dispatch.
- * The chrome.runtime API and audio-stubs are mocked.
+ * The chrome.runtime API and the audio modules are mocked.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -31,15 +31,18 @@ vi.stubGlobal("chrome", {
 });
 
 // ---------------------------------------------------------------------------
-// Mock audio-stubs so tones don't need a real AudioContext
+// Mock the audio engine and transport so tones need no real AudioContext
 // ---------------------------------------------------------------------------
 
-vi.mock("../../src/content/audio-stubs", () => ({
+vi.mock("../../src/content/audio/engine", () => ({
   resumeAudioContext: vi.fn().mockResolvedValue(undefined),
+  isAudioAvailable: vi.fn().mockReturnValue(true),
+}));
+
+vi.mock("../../src/content/audio/transport", () => ({
   playListenStart: vi.fn().mockResolvedValue(undefined),
   playListenEnd: vi.fn().mockResolvedValue(undefined),
   playError: vi.fn().mockResolvedValue(undefined),
-  isAudioAvailable: vi.fn().mockReturnValue(true),
 }));
 
 // ---------------------------------------------------------------------------
@@ -54,7 +57,7 @@ import {
   loadSettings,
   setHoldKey,
 } from "../../src/content/hold-to-talk";
-import { playListenStart, playListenEnd } from "../../src/content/audio-stubs";
+import { playListenStart, playListenEnd } from "../../src/content/audio/transport";
 
 // ---------------------------------------------------------------------------
 // Helpers

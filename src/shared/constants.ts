@@ -134,6 +134,173 @@ export const SCAN_TONE_SPACING_MS = 90;
 export const SCAN_TOTAL_DURATION_MS = SCAN_MAX * SCAN_TONE_SPACING_MS;
 
 // ---------------------------------------------------------------------------
+// SPEC 9.5 — the shared cue bus
+// ---------------------------------------------------------------------------
+
+/**
+ * Every non-speech cue passes through one master gain before the destination.
+ * SPEC 9.5's graph is per tone; a shared trunk after it is what lets
+ * `settings.audioEnabled` mute the whole channel in one place and keeps the
+ * cue bus separate from the TTS path (SPEC 9.1: the two are never mixed).
+ */
+export const CUE_MASTER_GAIN = 0.9;
+
+/**
+ * A brick wall on the cue bus. Mutation sonification (9.8) is the first thing
+ * that plays several voices at once — up to eight point tones, three swell
+ * voices and five ticks can overlap — and Web Audio sums them arithmetically,
+ * so peaks add and the destination hard-clips. The threshold sits above a
+ * single tone's peak (0.18), so one tone at a time passes through untouched and
+ * only a genuine pile-up is limited. Same reasoning as TTS_LIMITER, different
+ * bus.
+ */
+export const CUE_LIMITER = {
+  thresholdDb: -6,
+  kneeDb: 0,
+  ratio: 20,
+  attackSec: 0.002,
+  releaseSec: 0.12,
+} as const;
+
+// ---------------------------------------------------------------------------
+// SPEC 9.8 — mutation sonification (F-17), and the generative layer HD-10 adds
+// ---------------------------------------------------------------------------
+
+/** SPEC 9.8 step 3: at most 8 added elements are sonified, sorted y then x. */
+export const MUTATION_POINT_CAP = 8;
+
+/** SPEC 9.8 step 4: point tones are 70 ms apart, tighter than the scan's 90 ms. */
+export const MUTATION_POINT_SPACING_MS = 70;
+
+/** SPEC 9.8 step 4: quieter than a scan, because this is ambient, not focal. */
+export const MUTATION_GAIN_MULTIPLIER = 0.6;
+
+/**
+ * SPEC 9.8 step 6: at most one burst per 1200 ms. Not optional — a polling
+ * widget otherwise produces the continuous noise this project exists to avoid.
+ */
+export const MUTATION_RATE_LIMIT_MS = 1200;
+
+/**
+ * Text churn (characterData edits, text nodes appearing) never reaches the
+ * element index, so it has no `index.changed` to ride on and needs its own
+ * flush. Longer than the index observer's 150 ms debounce on purpose: when a
+ * mutation changes both the text and the set of controls, the index diff
+ * arrives first and cancels this timer, so the burst carries the points rather
+ * than spending the rate limit on the churn that preceded them.
+ */
+export const MUTATION_CHURN_DEBOUNCE_MS = 220;
+
+/**
+ * The observer callback runs on the page's hot path and may receive thousands
+ * of records at once. It reads no layout and runs no query; it only counts, and
+ * it stops counting past this many records. Beyond a few hundred the burst is
+ * already "huge" and the exact number changes nothing you can hear.
+ */
+export const MUTATION_RECORD_SCAN_CAP = 256;
+
+/**
+ * Added elements kept for geometry. `getBoundingClientRect` forces layout, so
+ * it is called at most this many times, and only at flush time, which the rate
+ * limit already holds to once per 1200 ms.
+ */
+export const MUTATION_GEOMETRY_SAMPLE_CAP = 8;
+
+/**
+ * The floor under which a mutation is not worth a sound. A spinner swapping in,
+ * a class toggling, one label rewriting itself: below this the page has not
+ * materially changed, and firing would spend the 1200 ms rate limit on nothing
+ * — which is how the real event 800 ms later ends up silent.
+ */
+export const MUTATION_MIN_ADDED_ELEMENTS = 2;
+export const MUTATION_MIN_TEXT_CHANGES = 2;
+
+/** Descendants counted per sampled element when sizing a swell. Bounded work. */
+export const MUTATION_SUBTREE_COUNT_CAP = 200;
+
+// --- The swell: large structural additions (HD-10) --------------------------
+
+/** Below this many added elements there is nothing to swell about; points only. */
+export const SWELL_MIN_ELEMENTS = 4;
+
+/** Added elements (subtree-weighted) that count as "the whole view rebuilt". */
+export const SWELL_FULL_SCALE_ELEMENTS = 48;
+
+/**
+ * Roots for the swell, high to low: the bigger the addition, the deeper the
+ * note. A2, G2, E2, D2, C2, A1 — an A minor pentatonic descent, so a swell is
+ * consonant with the 220 Hz A that SPEC 9.3's `freq(y)` is built on and two
+ * swells in a row are an interval rather than a collision. Sawtooth voices,
+ * not sine: the harmonics carry the pitch on small drivers where a 55 Hz
+ * fundamental is inaudible.
+ */
+export const SWELL_ROOTS_HZ = [110, 98, 82.41, 73.42, 65.41, 55] as const;
+
+/** Swell length, interpolated by magnitude. A big change takes longer to arrive. */
+export const SWELL_DURATION_MS = { min: 380, max: 900 } as const;
+
+/** Fraction of the swell spent rising. Slow attack is what makes it a swell. */
+export const SWELL_ATTACK_RATIO = 0.45;
+
+/** Peak gain, interpolated by magnitude. Under a point tone's 0.18: this is the bed. */
+export const SWELL_PEAK_GAIN = { min: 0.045, max: 0.105 } as const;
+
+/** Detune between the two saw voices, in cents. Enough to beat, not enough to sound out of tune. */
+export const SWELL_DETUNE_CENTS = 7;
+
+/** Resonance on the sweeping lowpass. The "cybernetic" part of the timbre. */
+export const SWELL_FILTER_Q = 7;
+
+/**
+ * The cutoff sweep, as multiples of the root: it opens from just above the
+ * fundamental to the top multiple over the attack, then settles back. A rising
+ * resonant cutoff is the materializing gesture; the top multiple is
+ * interpolated by magnitude, so a bigger change opens brighter.
+ */
+export const SWELL_FILTER_START_MULTIPLE = 1.25;
+export const SWELL_FILTER_PEAK_MULTIPLE = { min: 6, max: 14 } as const;
+export const SWELL_FILTER_SETTLE_MULTIPLE = 2;
+
+/**
+ * The sine that sits under the saws at the same root, as a fraction of the
+ * swell's peak gain. It replaces the fundamental the resonant lowpass takes
+ * out; an octave lower would be 27.5 Hz at the deepest root, which nothing on
+ * a laptop reproduces.
+ */
+export const SWELL_BODY_GAIN_RATIO = 0.55;
+
+/** Half-width of the two saw voices around the mutation's centroid, at full spread. */
+export const SWELL_WIDTH_MAX = 0.35;
+
+// --- The ticks: text churn (HD-10) -----------------------------------------
+
+/** At most this many ticks per burst, however much text changed. */
+export const CHURN_TICK_MAX = 5;
+
+/** Tighter than the point spacing: these are a flurry, not a sequence. */
+export const CHURN_TICK_SPACING_MS = 28;
+
+/** Short enough to read as a click rather than a note. */
+export const CHURN_TICK_DURATION_MS = 18;
+
+/** Quiet. Text churn is the most frequent event on a live page. */
+export const CHURN_TICK_PEAK_GAIN = 0.045;
+
+/**
+ * A6, C7, E7, G7 — the same A minor pentatonic as the swell roots, four octaves
+ * up, played as an ascending arpeggio. A square wave through a high-Q bandpass
+ * at these frequencies is a struck-glass sound, which is what "crystalline"
+ * means here; the pitch set is what stops a flurry sounding like a fault.
+ */
+export const CHURN_TICK_FREQS_HZ = [1760, 2093.0, 2637.02, 3135.96] as const;
+
+/** Bandpass resonance for a tick. High: this is a resonator, not a filter. */
+export const CHURN_TICK_FILTER_Q = 12;
+
+/** Ring buffer of scheduled cues kept for tests and inspection. */
+export const AUDIO_LOG_CAPACITY = 128;
+
+// ---------------------------------------------------------------------------
 // SPEC 11.4 — resolver response handling
 // ---------------------------------------------------------------------------
 
@@ -296,9 +463,184 @@ export const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_flash_v2_5";
 /** HD-A06: ElevenLabs default voice ID (George). */
 export const DEFAULT_ELEVENLABS_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb";
 
+/**
+ * Explicit voice settings for every ElevenLabs request.
+ *
+ * Sending none makes the API apply the voice's stored defaults
+ * (stability 0.5, similarity_boost 0.75, style 0, use_speaker_boost true),
+ * which open an utterance over-emphatically and loud before settling.
+ *
+ *   stability 0.65      — above the 0.5 default, so the delivery does not
+ *                         over-perform the opening clause. Not higher: past
+ *                         ~0.75 the read goes monotone.
+ *   similarity_boost 0.6 — below the 0.75 default; high adherence to the
+ *                         reference recording is what drags in its artifacts.
+ *   style 0             — no style exaggeration. Non-zero also costs latency.
+ *   use_speaker_boost false — the boost raises level and hardens the attack,
+ *                         and costs latency, which HD-A06 budgets at ~75ms.
+ */
+export const ELEVENLABS_VOICE_SETTINGS = {
+  stability: 0.65,
+  similarity_boost: 0.6,
+  style: 0,
+  use_speaker_boost: false,
+} as const;
+
+/**
+ * Peak gain for decoded ElevenLabs speech. Unity: the clip is already mastered,
+ * and attenuating it here only made the body quiet without touching the loud
+ * opening, because a static gain scales peaks and body by the same factor.
+ * Taming the opening is the limiter's job, below.
+ */
+export const TTS_PLAYBACK_GAIN = 1.0;
+
+/**
+ * Limiter applied to decoded speech before it reaches the destination.
+ *
+ * Utterances open hot — the model over-drives the first clause, and MP3 decoding
+ * adds inter-sample overshoot on top, so the opening seconds exceed unity and
+ * the output stage hard-clips them. That clipping is the crackle; it is not
+ * present in the rest of the clip, which sits at a normal level.
+ *
+ * A compressor fixes what a gain could not: it acts only above the threshold, so
+ * the hot opening is pulled down while normal speech passes untouched.
+ *
+ *   threshold -4 dB — normal TTS speech peaks below this and is not affected.
+ *   ratio 20, knee 0 — a brick wall, not a compressor: this is peak safety.
+ *   attack 3 ms     — fast enough to catch a plosive, slow enough not to dull it.
+ *   release 250 ms  — long enough that the gain does not pump between syllables.
+ */
+export const TTS_LIMITER = {
+  thresholdDb: -4,
+  kneeDb: 0,
+  ratio: 20,
+  attackSec: 0.003,
+  releaseSec: 0.25,
+} as const;
+
+/** Fade in over this long so the buffer does not hard-start into a click. */
+export const TTS_FADE_IN_MS = 90;
+
+/** Fade out over this long on interruption, so a stop does not click (SPEC 10.6.4). */
+export const TTS_FADE_OUT_MS = 40;
+
+/**
+ * SPEC 10.6.2: chrome.tts playback rate. Used both for the configured local
+ * engine and for the last-resort speak, which previously inlined it twice.
+ */
+export const DEFAULT_TTS_RATE = 1.6;
+
 /** SPEC 10.6.3: {name} is truncated to 40 characters for speech. */
 export const CONFIRMATION_NAME_MAX_CHARS = 40;
 
 /** SPEC 10.6.2: utterances longer than 200 characters are split into sentences. */
 export const TTS_CHUNK_MAX_CHARS = 200;
 
+
+// ---------------------------------------------------------------------------
+// F-22 Synthetic text detection (GPTZero) — HD-13 / DEV-011
+// ---------------------------------------------------------------------------
+
+/**
+ * GPTZero's text classifier. POST, API key in the `x-api-key` header, never in
+ * the query string — the same rule the Gemini key follows (SPEC 8.6).
+ */
+export const GPTZERO_ENDPOINT = "https://api.gptzero.me/v2/predict/text";
+
+/**
+ * The detector runs alongside the browser-context gather, ahead of the answer
+ * call, so its budget has to fit inside the gap a summary already has. A late
+ * verdict is dropped, never waited for: the answer must not be slower because
+ * the classifier was (CLAUDE.md 14, "protect the chain").
+ */
+export const GPTZERO_TIMEOUT_MS = 2500;
+
+/**
+ * Page text sent for classification. Well inside GPTZero's document limit, and
+ * enough of a sample that the verdict is about the page rather than its header.
+ */
+export const GPTZERO_MAX_CHARS = 20_000;
+
+/**
+ * Below this, no verdict is produced at all. Detectors are unreliable on short
+ * text, and a false "this is A.I." on a page of nav links is worse than silence:
+ * it teaches the user to ignore the warning that matters.
+ */
+export const GPTZERO_MIN_CHARS = 350;
+
+/**
+ * P(ai) at or above this is spoken as "most of this page". Deliberately high.
+ * The warning is only useful while it stays rare.
+ */
+export const GPTZERO_HIGH_THRESHOLD = 0.8;
+
+/** P(ai) at or above this is spoken as "parts of this page". Below it, nothing is said. */
+export const GPTZERO_MIXED_THRESHOLD = 0.5;
+
+/**
+ * A document GPTZero itself classes as MIXED warns from a lower score: it has
+ * found AI passages inside human text, which is the case the whole-document
+ * probability understates.
+ */
+export const GPTZERO_MIXED_CLASS_THRESHOLD = 0.35;
+
+/**
+ * Verdicts kept, keyed by a hash of the sampled text. A second question about
+ * the same page costs nothing and takes no time.
+ */
+export const GPTZERO_CACHE_MAX_ENTRIES = 50;
+
+/**
+ * HD-14: a paragraph at or above this is flagged on its own, whatever the
+ * document as a whole scored. This is the case a single page-level number
+ * hides — a human article with one machine-written section inserted into it.
+ */
+export const GPTZERO_PARAGRAPH_THRESHOLD = 0.7;
+
+/**
+ * A paragraph shorter than this is not judged at all.
+ *
+ * This is not a way of suppressing warnings, it is a limit on what can honestly
+ * be classified: a caption, a nav item or a one-line pull quote carries too
+ * little signal, and a detector asked about it returns noise. Without the gate,
+ * "any paragraph over 70%" turns into fifty chances to trip on a fifty-paragraph
+ * page, and a warning that fires on everything means nothing.
+ */
+export const GPTZERO_PARAGRAPH_MIN_CHARS = 250;
+
+/**
+ * How many flagged paragraphs it takes to warn. **One**, per HD-14 — the human
+ * chose the most sensitive setting deliberately. If real pages prove noisy,
+ * this is the one number to raise, and `GPTZERO_PARAGRAPH_MIN_CHARS` is the
+ * second.
+ */
+export const GPTZERO_MIN_FLAGGED_PARAGRAPHS = 1;
+
+/**
+ * Eligibility fallback when the response scores paragraphs but carries no
+ * sentence text to measure them with: three sentences is a paragraph, one is a
+ * caption. Used only when a character count is genuinely unavailable.
+ */
+export const GPTZERO_PARAGRAPH_MIN_SENTENCES = 3;
+
+/** Flagged excerpts quoted into the prompt, and how much of each. Page text: capped and sanitized. */
+export const GPTZERO_EXCERPT_MAX_CHARS = 120;
+export const GPTZERO_MAX_EXCERPTS = 4;
+
+/**
+ * Spoken before the answer, never instead of it. "A.I." rather than "AI" so
+ * both TTS engines say the letters (SPEC 10.6.2). The wording is the human's
+ * from HD-14: the point is not that a detector fired, it is what to do about it.
+ */
+export const SYNTHETIC_WARNING_SENTENCES = {
+  high: "Heads up: most of this page reads as A.I. generated text. Watch out for misinformation or incorrect details.",
+  mixed: "Heads up: parts of this page read as A.I. generated text. Watch out for misinformation.",
+} as const;
+
+/** HD-14: the document read as human, but a section of it did not. */
+export function flaggedSectionWarning(count: number): string {
+  if (count === 1) {
+    return "Heads up: one section of this page reads as A.I. generated. Watch out for misinformation there.";
+  }
+  return `Heads up: ${count} sections of this page read as A.I. generated. Watch out for misinformation.`;
+}

@@ -20,9 +20,25 @@ import {
   type NormalizedTranscript,
   normalizeTranscript,
 } from "../../shared/normalize";
-import { type ScoreBreakdown, scoreCandidate } from "./score";
+import { type ScoreBreakdown, isValidVerbForRole, scoreCandidate } from "./score";
 
 export type LocalResolveOutcome = "CONFIDENT" | "AMBIGUOUS" | "MISS";
+
+/** Roles a bare "name" command clicks; everything else is focused (SPEC 7.2.2). */
+const DEFAULT_CLICK_ROLES = [
+  "button",
+  "link",
+  "checkbox",
+  "radio",
+  "tab",
+  "menuitem",
+  "option",
+];
+
+/** SPEC 7.2.2: the verb to use when the command named none. */
+export function defaultVerbForRole(role: string): Verb {
+  return DEFAULT_CLICK_ROLES.includes(role) ? "click" : "focus";
+}
 
 export interface ScoredEntry {
   entry: ElementIndexEntry;
@@ -103,20 +119,28 @@ export function resolveLocal(
         normalized.spokenVerb === "select"
       ) {
         verb = "select";
+      } else if (
+        (normalized.verb === "check" || normalized.verb === "uncheck") &&
+        !isValidVerbForRole(normalized.verb, target.role)
+      ) {
+        // HD-14: `check` and `uncheck` are their own actions, not synonyms for
+        // `click`, and they only mean anything on something with a state. The
+        // lexicon reads "check out the deals" and "turn off the alerts" as
+        // toggles; when the winner turns out to be a link or a button, fall
+        // back to the default verb rather than let validation refuse the batch
+        // over SPEC 7.6.1 rule 8.
+        verb =
+          normalized.verb === "uncheck" && target.role === "radio"
+            ? // SPEC 7.6.2 makes `uncheck` invalid for a radio, and a click
+              // would *select* it -- the opposite of what was asked. Keep the
+              // verb and let validation refuse it out loud.
+              "uncheck"
+            : defaultVerbForRole(target.role);
       } else {
         verb = normalized.verb;
       }
     } else {
-      const clickRoles = [
-        "button",
-        "link",
-        "checkbox",
-        "radio",
-        "tab",
-        "menuitem",
-        "option",
-      ];
-      verb = clickRoles.includes(target.role) ? "click" : "focus";
+      verb = defaultVerbForRole(target.role);
     }
 
     // Determine value for fill / select

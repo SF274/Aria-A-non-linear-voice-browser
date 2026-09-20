@@ -11,12 +11,16 @@ import {
   type ElementIndexEntry,
   deriveRegion,
   type Region,
+  VALUE_REQUIRED_VERBS,
+  type Verb,
 } from "../../shared/contracts";
 import {
   CLARIFY_REPLY_THRESHOLD,
   LOCAL_MARGIN,
 } from "../../shared/constants";
 import { cleanText, normalizeTranscript } from "../../shared/normalize";
+import { isValidVerbForRole } from "../execute/validate";
+import { defaultVerbForRole } from "./local";
 import { scoreCandidate } from "./score";
 
 const ORDINALS = ["first", "second", "third", "fourth"] as const;
@@ -157,4 +161,25 @@ export function resolveClarificationReply(
     return { kind: "resolved", entry: best.entry };
   }
   return { kind: "unresolved" };
+}
+
+/**
+ * The verb to act on a clarified candidate with (HD-14).
+ *
+ * The question only ever asked *which* element; the verb was settled before it
+ * was asked. Pinning it matters most for `uncheck`: dropping back to the
+ * default `click` turns an absolute request into a toggle, so a box that was
+ * already off would come back on.
+ *
+ * Two pinned verbs are discarded rather than used. One the chosen candidate
+ * cannot take (SPEC 7.6.2), because refusing the batch out loud is a worse
+ * answer than the default. And `fill` or `select`, which need a value this
+ * path does not carry -- SPEC 7.6.1 rule 6 would refuse them for having none.
+ */
+export function verbForClarifiedTarget(entry: ElementIndexEntry, pinned?: Verb): Verb {
+  const needsValue = (VALUE_REQUIRED_VERBS as readonly Verb[]).includes(pinned as Verb);
+  if (pinned !== undefined && !needsValue && isValidVerbForRole(pinned, entry)) {
+    return pinned;
+  }
+  return defaultVerbForRole(entry.role);
 }

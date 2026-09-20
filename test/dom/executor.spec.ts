@@ -13,6 +13,60 @@ import { executeRequest } from "../../src/content/executor";
 import { buildElementIndex } from "../../src/content/index-builder";
 import { reResolveElement } from "../../src/content/reresolve";
 
+/**
+ * Mounts a checkbox that behaves the way a React-controlled one does: an
+ * instance-level `checked` property records the last state the framework
+ * rendered, onChange fires only when the DOM disagrees with that record, and
+ * every render writes the framework's state back onto the node. Writing through
+ * the instance property would update the record first, so the events that
+ * follow would look like "no change" and be dropped.
+ */
+function mountReactCheckbox(label: string, initial: boolean) {
+  const container = document.createElement("div");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.setAttribute("aria-label", label);
+  container.appendChild(input);
+  document.body.appendChild(container);
+
+  const nativeDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "checked"
+  )!;
+  nativeDescriptor.set!.call(input, initial);
+
+  let state = initial;
+  let tracked = initial;
+  const onChange = vi.fn();
+
+  Object.defineProperty(input, "checked", {
+    configurable: true,
+    get() {
+      return nativeDescriptor.get!.call(this);
+    },
+    set(v: boolean) {
+      tracked = Boolean(v);
+      nativeDescriptor.set!.call(this, v);
+    },
+  });
+
+  const handler = () => {
+    const now = Boolean(nativeDescriptor.get!.call(input));
+    if (now !== tracked) {
+      tracked = now;
+      state = now;
+      onChange(now);
+    }
+    // Render: the framework's state is the truth, and is always written back.
+    nativeDescriptor.set!.call(input, state);
+    tracked = state;
+  };
+  input.addEventListener("input", handler);
+  input.addEventListener("change", handler);
+
+  return { input, container, onChange, reactState: () => state };
+}
+
 describe("Action Executor DOM Tests (SPEC 7.6.3, 12.8, 12.10, 16 F-07)", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
@@ -264,7 +318,7 @@ describe("Action Executor DOM Tests (SPEC 7.6.3, 12.8, 12.10, 16 F-07)", () => {
       expect(result.results[0].status).toBe("not_found");
     });
 
-    it("check & uncheck: interacts with checkbox according to current checked state", async () => {
+    it("check & uncheck: write the named state absolutely, and never click to get there (HD-14)", async () => {
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.setAttribute("aria-label", "Direct Flights Only");
@@ -272,45 +326,189 @@ describe("Action Executor DOM Tests (SPEC 7.6.3, 12.8, 12.10, 16 F-07)", () => {
       document.body.appendChild(cb);
 
       let clickCount = 0;
-      cb.addEventListener("click", () => {
-        clickCount++;
-      });
+      const events: string[] = [];
+      cb.addEventListener("click", () => clickCount++);
+      cb.addEventListener("input", () => events.push("input"));
+      cb.addEventListener("change", () => events.push("change"));
 
       const index = buildElementIndex(document);
-
-      // 1. check when unchecked -> clicks
       const checkReq: ExecuteRequest = {
         buildId: index.buildId,
         actions: [{ verb: "check", elementId: "el_0" }],
         stepDelayMs: 0,
         playTicks: false,
       };
-      await executeRequest(checkReq, { doc: document, index });
-      expect(clickCount).toBe(1);
-
-      // Simulate checked state
-      cb.checked = true;
-
-      // 2. check when already checked -> does not click
-      await executeRequest(checkReq, { doc: document, index });
-      expect(clickCount).toBe(1);
-
-      // 3. uncheck when checked -> clicks
       const uncheckReq: ExecuteRequest = {
         buildId: index.buildId,
         actions: [{ verb: "uncheck", elementId: "el_0" }],
         stepDelayMs: 0,
         playTicks: false,
       };
-      await executeRequest(uncheckReq, { doc: document, index });
-      expect(clickCount).toBe(2);
 
-      // Simulate unchecked state
-      cb.checked = false;
+      // 1. check when unchecked -> becomes checked by writing the state, not by
+      //    clicking. A click is a toggle, and a toggle is the bug.
+      const r1 = await executeRequest(checkReq, { doc: document, index });
+      expect(r1.ok).toBe(true);
+      expect(cb.checked).toBe(true);
+      expect(clickCount).toBe(0);
+      expect(events).toEqual(["input", "change"]);
 
-      // 4. uncheck when already unchecked -> does not click
-      await executeRequest(uncheckReq, { doc: document, index });
-      expect(clickCount).toBe(2);
+      // 2. check when already checked -> aborts, reports success, stays checked
+      events.length = 0;
+      const r2 = await executeRequest(checkReq, { doc: document, index });
+      expect(r2.ok).toBe(true);
+      expect(r2.results[0].status).toBe("ok");
+      expect(cb.checked).toBe(true);
+      expect(events).toEqual([]);
+      expect(clickCount).toBe(0);
+
+      // 3. uncheck when checked -> becomes unchecked
+      const r3 = await executeRequest(uncheckReq, { doc: document, index });
+      expect(r3.ok).toBe(true);
+      expect(cb.checked).toBe(false);
+      expect(events).toEqual(["input", "change"]);
+      expect(clickCount).toBe(0);
+
+      // 4. uncheck when already unchecked -> aborts, reports success, stays off
+      events.length = 0;
+      const r4 = await executeRequest(uncheckReq, { doc: document, index });
+      expect(r4.ok).toBe(true);
+      expect(r4.results[0].status).toBe("ok");
+      expect(cb.checked).toBe(false);
+      expect(events).toEqual([]);
+      expect(clickCount).toBe(0);
+    });
+
+    it("uncheck: an already-unchecked React-controlled checkbox is not toggled to true (HD-14)", async () => {
+      const { input, reactState, onChange } = mountReactCheckbox("Nonstop Flights", false);
+
+      const index = buildElementIndex(document);
+      const result = await executeRequest(
+        {
+          buildId: index.buildId,
+          actions: [{ verb: "uncheck", elementId: "el_0" }],
+          stepDelayMs: 0,
+          playTicks: false,
+        },
+        { doc: document, index }
+      );
+
+      // The step succeeded because the state the user asked for is the state
+      // that holds. Nothing was toggled, and the framework was never told of a
+      // change that did not happen.
+      expect(result.ok).toBe(true);
+      expect(result.results[0].status).toBe("ok");
+      expect(input.checked).toBe(false);
+      expect(reactState()).toBe(false);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it("uncheck: a checked React-controlled checkbox is noticed by the value tracker and turns off (HD-14)", async () => {
+      const { input, container, reactState, onChange } = mountReactCheckbox("Nonstop Flights", true);
+
+      const bubbled: string[] = [];
+      container.addEventListener("input", (e) => bubbled.push("input:" + e.bubbles));
+      container.addEventListener("change", (e) => bubbled.push("change:" + e.bubbles));
+
+      const index = buildElementIndex(document);
+      const result = await executeRequest(
+        {
+          buildId: index.buildId,
+          actions: [{ verb: "uncheck", elementId: "el_0" }],
+          stepDelayMs: 0,
+          playTicks: false,
+        },
+        { doc: document, index }
+      );
+
+      expect(result.ok).toBe(true);
+      expect(input.checked).toBe(false);
+      // The tracker saw it: written through the prototype setter, so the
+      // instance-level record was still stale when the events arrived.
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith(false);
+      expect(reactState()).toBe(false);
+      // Both events bubble, in the order a real interaction produces them.
+      expect(bubbled).toEqual(["input:true", "change:true"]);
+    });
+
+    it("check: a React-controlled checkbox that is off turns on, once (HD-14)", async () => {
+      const { input, reactState, onChange } = mountReactCheckbox("Refundable Only", false);
+
+      const index = buildElementIndex(document);
+      const result = await executeRequest(
+        {
+          buildId: index.buildId,
+          actions: [{ verb: "check", elementId: "el_0" }],
+          stepDelayMs: 0,
+          playTicks: false,
+        },
+        { doc: document, index }
+      );
+
+      expect(result.ok).toBe(true);
+      expect(input.checked).toBe(true);
+      expect(reactState()).toBe(true);
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith(true);
+    });
+
+    it("uncheck: still turns the box off when the page cancels the click (HD-14)", async () => {
+      // A React wrapper that owns the state itself commonly calls
+      // preventDefault() in onClick. A canceled click restores the checkedness
+      // the element had before it (the legacy-canceled-activation behaviour),
+      // so driving a toggle by clicking silently does nothing on such a page.
+      const { input, reactState, onChange } = mountReactCheckbox("Nonstop Flights", true);
+      input.addEventListener("click", (e) => e.preventDefault());
+
+      const index = buildElementIndex(document);
+      const result = await executeRequest(
+        {
+          buildId: index.buildId,
+          actions: [{ verb: "uncheck", elementId: "el_0" }],
+          stepDelayMs: 0,
+          playTicks: false,
+        },
+        { doc: document, index }
+      );
+
+      expect(result.ok).toBe(true);
+      expect(input.checked).toBe(false);
+      expect(reactState()).toBe(false);
+      expect(onChange).toHaveBeenCalledWith(false);
+    });
+
+    it("check: an ARIA switch with no checked property is driven by one click, and only when its state differs", async () => {
+      const sw = document.createElement("div");
+      sw.setAttribute("role", "switch");
+      sw.setAttribute("tabindex", "0");
+      sw.setAttribute("aria-label", "Email Alerts");
+      sw.setAttribute("aria-checked", "false");
+      document.body.appendChild(sw);
+
+      let clickCount = 0;
+      sw.addEventListener("click", () => {
+        clickCount++;
+        // The page owns a custom widget's state; a click is the only way in.
+        sw.setAttribute("aria-checked", sw.getAttribute("aria-checked") === "true" ? "false" : "true");
+      });
+
+      const index = buildElementIndex(document);
+      const checkReq: ExecuteRequest = {
+        buildId: index.buildId,
+        actions: [{ verb: "check", elementId: "el_0" }],
+        stepDelayMs: 0,
+        playTicks: false,
+      };
+
+      expect((await executeRequest(checkReq, { doc: document, index })).ok).toBe(true);
+      expect(sw.getAttribute("aria-checked")).toBe("true");
+      expect(clickCount).toBe(1);
+
+      // Already on: no second click, which would have turned it back off.
+      expect((await executeRequest(checkReq, { doc: document, index })).ok).toBe(true);
+      expect(sw.getAttribute("aria-checked")).toBe("true");
+      expect(clickCount).toBe(1);
     });
 
     it("scrollTo: calls scrollIntoView on element", async () => {

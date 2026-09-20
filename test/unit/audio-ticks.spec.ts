@@ -1,45 +1,25 @@
 /**
- * Execution ticks — the SPEC 9.3 mappings behind the positional tick the
- * executor plays per step of a sequence (7.6.3 step 5), and the rule that audio
- * trouble never breaks anything (9.6).
+ * Execution and transport ticks — the rule that audio trouble never breaks
+ * anything (SPEC 9.6).
+ *
+ * The SPEC 9.3 mapping table these ticks are built on is asserted in
+ * `audio.spec.ts`, which owns the engine.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetAudioEngine } from "../../src/content/audio/engine";
 import {
-  freqForY,
-  panForX,
+  playError,
+  playListenEnd,
+  playListenStart,
   playPositionalTick,
   playProcessingTick,
-  timbreForRole,
-} from "../../src/content/audio-stubs";
+} from "../../src/content/audio/transport";
 
-describe("SPEC 9.3 spatial mapping", () => {
-  it("pan(x) = clamp(2x - 1, -0.95, 0.95)", () => {
-    expect(panForX(0.5)).toBe(0);
-    expect(panForX(0.75)).toBeCloseTo(0.5);
-    expect(panForX(0)).toBe(-0.95);
-    expect(panForX(1)).toBe(0.95);
-  });
-
-  it("freq(y) spans two octaves: y=1 -> 220 Hz, y=0 -> 880 Hz", () => {
-    expect(freqForY(1)).toBeCloseTo(220);
-    expect(freqForY(0.5)).toBeCloseTo(440);
-    expect(freqForY(0)).toBeCloseTo(880);
-  });
-
-  it("timbre by role class", () => {
-    expect(timbreForRole("link")).toEqual({ type: "sine", peak: 0.16, lowpass: false });
-    expect(timbreForRole("button")).toEqual({ type: "triangle", peak: 0.18, lowpass: false });
-    expect(timbreForRole("textbox")).toEqual({ type: "square", peak: 0.14, lowpass: true });
-    const other = timbreForRole("heading");
-    expect(other.type).toBe("sine");
-    expect(other.peak).toBeCloseTo(0.16 * 0.7);
-  });
-});
-
-describe("ticks degrade to silence (SPEC 9.6)", () => {
+describe("cues degrade to silence (SPEC 9.6)", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    resetAudioEngine();
   });
 
   it("never throw when an AudioContext cannot be constructed", async () => {
@@ -53,5 +33,29 @@ describe("ticks degrade to silence (SPEC 9.6)", () => {
     );
     await expect(playPositionalTick({ x: 0.2, y: 0.8, role: "button" })).resolves.toBeUndefined();
     await expect(playProcessingTick()).resolves.toBeUndefined();
+    await expect(playListenStart()).resolves.toBeUndefined();
+    await expect(playListenEnd()).resolves.toBeUndefined();
+    await expect(playError()).resolves.toBeUndefined();
+  });
+
+  it("never throw when there is no AudioContext at all (jsdom)", async () => {
+    // jsdom has no Web Audio. This is the path a unit test run takes, and it
+    // must be the quiet one rather than the one that fails a command.
+    await expect(playPositionalTick({ x: 0.5, y: 0.5, role: "link" })).resolves.toBeUndefined();
+    await expect(playProcessingTick()).resolves.toBeUndefined();
+  });
+
+  it("never throw when a suspended context refuses to resume", async () => {
+    vi.stubGlobal(
+      "AudioContext",
+      class {
+        state = "suspended";
+        resume() {
+          return Promise.reject(new Error("blocked by autoplay policy"));
+        }
+      }
+    );
+    await expect(playListenStart()).resolves.toBeUndefined();
+    await expect(playPositionalTick({ x: 0.1, y: 0.1, role: "textbox" })).resolves.toBeUndefined();
   });
 });

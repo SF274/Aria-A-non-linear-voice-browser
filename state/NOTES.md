@@ -159,3 +159,78 @@ At the end of every working session, before context is lost, write here anything
 - **Known limits:** text inside iframes and shadow DOM is not read; a single-page app that changes its URL late is described before it finishes; page text goes to Google (HD-09), so a password manager page or an inbox is sent if the user asks about it.
 - **IG-03:** the options button now runs the ten chunks silently (volume 0, rate 10) and waits for real `end` events; the old code reported PASS after 600 ms whether or not speech finished, and then spoke for a minute. The silent run cannot exercise the ~15 s network-voice cutoff (AS-03). The gate stays `NOT_RUN` until a human hears a real-time chunked passage once. **Measured on the dev machine:** the engine paces itself in real time even at volume 0 and rate 10, so the ten-chunk run takes about 14 s (the events are identical at volume 0 and volume 1, so silence rests on `chrome.tts` honouring `volume: 0`, which the automated tests cannot hear). The button shows "Running IG-03…" meanwhile; `options.spec.ts` now allows 40 s.
 - **Caught by the SPEC 17.5 security test D6:** the first version of the resolver context included the page's hostname, which SPEC 8.3 keeps out of the resolver request. The resolver's context is now the date, the time and the page title only (`ContextScope`), and G10 and `browser-context.spec.ts` assert it.
+
+### N-018 — The audio engine, and what a mutation sounds like
+- **Date:** 2026-09-19
+- **Directive:** HD-10. Deviations in DEV-009.
+- **Built:** `src/content/audio/engine.ts`, `mapping.ts`, `transport.ts`, `mutation.ts`. `audio-stubs.ts` is deleted and its three import sites repointed; `executor.ts` now holds a `batch` activity for the length of a run so SPEC 9.8 step 5 has something to suppress against.
+- **The sound, in one paragraph:** a mutation is described by how much arrived, where it landed and what kind of thing it was. Magnitude picks a root from a descending A minor pentatonic table (110 Hz down to 55 Hz) — bigger means deeper — and interpolates the swell's length, gain and filter brightness with it. The swell is two sawtooth voices detuned 7 cents apart and panned to either side of the change's centroid, through a lowpass at Q 7 whose cutoff opens from 1.25x the root to as much as 14x over the attack and then settles to 2x; a sine at the root replaces the fundamental the filter takes out. Sawtooth rather than sine because at a 55 Hz root the fundamental is inaudible on laptop headphones and the harmonics are what carry the pitch. Over that, SPEC 9.8's point tones, unchanged. Text churn with no new control gets up to five 18 ms square pulses through a bandpass at Q 12, an ascending arpeggio four octaves above the swell roots, panned across the span the change covered.
+- **Why quantized pitches:** two mutations in a row then make an interval instead of a glide, and the same size of change always sounds like the same note. Nothing uses `Math.random`, which is also why the e2e assertions are exact rather than approximate.
+- **Performance:** the observer callback counts and does nothing else — no `getBoundingClientRect`, no `querySelectorAll`, no per-node allocation beyond a sample of eight, and it stops at 256 records. `test/dom/mutation-sonification.spec.ts` asserts that by spying on both methods during a 400-element storm. Geometry comes free from the index entries when a burst has any, so only a churn-only burst measures anything, and then at most eight elements, at most once per 1200 ms.
+- **Two defects the tests caught before they shipped:** (1) a burst of two or three non-interactive elements with no text passed the threshold, scheduled nothing, and still spent the 1200 ms rate limit — so the event the user was waiting for arrived inside the window and was dropped. The churn layer now also carries a small structural change, and a burst that schedules nothing is not charged for the window. (2) `readyContext()` resumed the context through the SPEC 9.6 rule 4 path. Mutations fire before the user has touched the page, so that resume is refused by the autoplay policy, and rule 4 would have concluded the page has no audio — silencing the listen tone and every cue afterwards. The ambient path now resumes quietly.
+- **Not built:** the F-10 scan (T1-03) and SPEC 9.6 rule 4's spoken "Audio cues need a click on the page first." T1-02 stays `IN_PROGRESS`.
+- **Not verified:** the sound itself. Every assertion in the suite is about what was scheduled — frequency, pan, gain, timing — not about what comes out of the headphones. Someone has to put headphones on, open the demo page, hold the key once to resume the context, and click `Search flights`. The levels (swell peak 0.045–0.105, points 0.6x the SPEC 9.3 peaks, ticks 0.045) are first guesses; the cue bus limiter at -6 dB is what stops an overlap clipping, and it has never been heard either.
+
+### N-0xx — GPTZero's response shape was confirmed by probing the live endpoint, not by reading the docs (F-22)
+The Stoplight page the human linked renders its content with JavaScript, so it
+fetches as an empty shell. Rather than guess, `POST https://api.gptzero.me/v2/predict/text`
+was probed with a deliberately invalid key: it answers `403 {"error":"API key has
+no owner"}`, which confirms the URL, the method and that the key belongs in
+`x-api-key`. The **response** shape for a successful call is still unconfirmed
+by observation — no valid key was available in this session.
+
+That is why `parseVerdict` reads the body defensively rather than against a
+fixed schema: it takes `class_probabilities.ai`, then `completely_generated_prob`,
+then `average_generated_prob`, and returns *no verdict* if none of them is
+present and numeric. A shape this code has not seen degrades the feature to
+silence; it can never produce a wrong warning. When someone runs it with the
+real key, the thing worth checking is which of those three fields actually
+arrives — and what an ordinary human-written page scores, since the open risk
+in F-22 is false positives, not false negatives.
+
+### N-019 — Why a guarded click is still a state-blind click (HD-14, DEV-012)
+The executor already read the state before clicking: `check` clicked only when
+`!checked`, `uncheck` only when `checked`. That looks like it settles the
+direction, and it does not, because the guard and the click are two separate
+things and only the guard is absolute. A click toggles whatever the element is
+at the instant it lands.
+
+Two ordinary pages break it, and both were turned into tests before the fix:
+
+1. **A cancelled click.** A wrapper that owns its own checkbox state commonly
+   calls `preventDefault()` in `onClick`. The HTML activation behaviour then
+   *restores* the previous checkedness, so the click leaves the box exactly as
+   it was and the executor reports success. `test/dom/executor.spec.ts`,
+   "still turns the box off when the page cancels the click", fails against the
+   old code and passes against the new.
+2. **A disagreement about the current state.** The guard reads the DOM; a
+   controlled component renders from its own. When those differ, the guard
+   picks the wrong branch — the case that started this.
+
+The fix is to stop expressing an absolute request with a relative operation.
+`check` and `uncheck` now write `checked` through the prototype setter and
+dispatch `input` and `change`, the same bypass `fill` uses (DEV-004), and the
+two are shared in `nativePropertySetter` / `dispatchInputAndChange`.
+
+**What the new tests do and do not prove.** Four of the six new DOM assertions
+pass against the old implementation too, because in jsdom `element.click()`
+toggles `checked` and fires the same events, so a React-style tracker notices
+it either way. They are regression guards, not reproductions. The two that
+discriminate are the cancelled-click test above and "never click to get there",
+which asserts zero `click` events on a native checkbox.
+
+**The intent had to be fixed upstream as well**, or the executor would never see
+the verb. Three places dropped it: the resolver prompt never told the model that
+a checkbox takes `check`/`uncheck` (so it answered `click`, which is valid for
+the role and passed every check); the clarification path replaced the verb with
+`defaultVerb`, turning "uncheck one of these two" into a click once the user
+said which one; and the local resolver would let a lexicon toggle word reach a
+link or button, where SPEC 7.6.1 rule 8 refuses the batch out loud. The model's
+`click` is now rewritten to the named toggle — but only for a lone action (in a
+sequence the leading verb says nothing about later steps) and only onto a role
+that can take it.
+
+**Not verified:** nobody has spoken "uncheck" at a real page. Every assertion
+here is jsdom and a stubbed model. The demo page's three filter checkboxes are
+plain inputs with no framework behind them, so the path this fixes is the one a
+judge is *least* likely to hit on the demo page itself.

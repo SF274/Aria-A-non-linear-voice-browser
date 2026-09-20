@@ -13,6 +13,7 @@ import {
   CONFIRMATION_NAME_MAX_CHARS,
   DEFAULT_ELEVENLABS_MODEL_ID,
   DEFAULT_ELEVENLABS_VOICE_ID,
+  ELEVENLABS_VOICE_SETTINGS,
 } from "../../src/shared/constants";
 
 describe("TTS service unit tests (SPEC §10.6, HD-A06, HD-07)", () => {
@@ -350,6 +351,7 @@ describe("TTS service unit tests (SPEC §10.6, HD-A06, HD-07)", () => {
             text: "Spoken by ElevenLabs.",
             model_id: DEFAULT_ELEVENLABS_MODEL_ID,
             output_format: "mp3_44100_128",
+            voice_settings: ELEVENLABS_VOICE_SETTINGS,
           }),
         })
       );

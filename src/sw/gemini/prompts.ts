@@ -36,6 +36,11 @@ Rules:
   several steps, and then list the steps in the order they must happen.
 - "value" is required for fill and select, and forbidden otherwise. Type the
   user's words exactly; do not add to them.
+- A checkbox or a switch takes "check" or "uncheck", not "click". Those two
+  verbs name the state to end in, so "uncheck the nonstop filter" is uncheck
+  whether or not the box is currently ticked, and "turn on alerts" is check.
+  Use "click" on a checkbox only when the command itself is a bare click, such
+  as "click the nonstop box", which means toggle it.
 - Speech recognition makes mistakes. Prefer the element whose name sounds like
   the command over one that only shares a common word, and ignore filler such
   as "please" or "um".

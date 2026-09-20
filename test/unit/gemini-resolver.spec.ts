@@ -23,7 +23,7 @@ import {
   isModelTierDisabledForSession,
   resetModelTierSession,
 } from "../../src/sw/gemini/client";
-import { resolveWithGemini } from "../../src/sw/gemini/resolver";
+import { resolveWithGemini, toggleIntentOf } from "../../src/sw/gemini/resolver";
 
 function createMockIndexEntries(): ElementIndexEntry[] {
   const controls = [
@@ -210,6 +210,142 @@ describe("Gemini Resolver & Client (F-06 / T0-13, SPEC §11, §8, §17.4)", () =
       pageTitle: "Flight Search Demo",
       mode: "single",
     };
+
+    /** Builds a 200 response carrying the model output the test wants. */
+    function modelSaying(output: unknown): typeof fetch {
+      return vi.fn(async () => {
+        return new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: { parts: [{ text: JSON.stringify(output) }], role: "model" },
+                finishReason: "STOP",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }) as unknown as typeof fetch;
+    }
+
+    describe("explicit toggle intent (HD-14)", () => {
+      it("reads check and uncheck out of the command, and nothing else", () => {
+        expect(toggleIntentOf("uncheck the nonstop filter")).toBe("uncheck");
+        expect(toggleIntentOf("turn off nonstop")).toBe("uncheck");
+        expect(toggleIntentOf("untick the fare rules")).toBe("uncheck");
+        expect(toggleIntentOf("check the fare rules")).toBe("check");
+        expect(toggleIntentOf("turn on nonstop")).toBe("check");
+        expect(toggleIntentOf("click the fare rules")).toBeNull();
+        expect(toggleIntentOf("confirm booking")).toBeNull();
+      });
+
+      it("a command that said uncheck is not executed as a toggling click", async () => {
+        const result = await resolveWithGemini(
+          { ...defaultRequest, transcript: "uncheck i accept the fare rules" },
+          entries,
+          {
+            apiKey: TEST_API_KEY,
+            // The model answers with `click`, which on a checkbox flips whatever
+            // state it is in -- the state-blind bug this rewrite exists to stop.
+            fetchFn: modelSaying({
+              actions: [{ verb: "click", elementId: "el_21" }],
+              confidence: 0.94,
+            }),
+          }
+        );
+
+        expect(result.outcome).toBe("CONFIDENT");
+        expect(result.actions).toEqual([{ verb: "uncheck", elementId: "el_21" }]);
+      });
+
+      it("a command that said check becomes check, and the model's own check is left alone", async () => {
+        const rewritten = await resolveWithGemini(
+          { ...defaultRequest, transcript: "turn on i accept the fare rules" },
+          entries,
+          {
+            apiKey: TEST_API_KEY,
+            fetchFn: modelSaying({
+              actions: [{ verb: "click", elementId: "el_21" }],
+              confidence: 0.9,
+            }),
+          }
+        );
+        expect(rewritten.actions).toEqual([{ verb: "check", elementId: "el_21" }]);
+
+        const untouched = await resolveWithGemini(
+          { ...defaultRequest, transcript: "check i accept the fare rules" },
+          entries,
+          {
+            apiKey: TEST_API_KEY,
+            fetchFn: modelSaying({
+              actions: [{ verb: "check", elementId: "el_21" }],
+              confidence: 0.9,
+            }),
+          }
+        );
+        expect(untouched.actions).toEqual([{ verb: "check", elementId: "el_21" }]);
+      });
+
+      it("a bare click on a checkbox stays a click", async () => {
+        const result = await resolveWithGemini(
+          { ...defaultRequest, transcript: "click i accept the fare rules" },
+          entries,
+          {
+            apiKey: TEST_API_KEY,
+            fetchFn: modelSaying({
+              actions: [{ verb: "click", elementId: "el_21" }],
+              confidence: 0.94,
+            }),
+          }
+        );
+
+        expect(result.actions).toEqual([{ verb: "click", elementId: "el_21" }]);
+      });
+
+      it("the rewrite never reaches a role that cannot take the verb", async () => {
+        const result = await resolveWithGemini(
+          { ...defaultRequest, transcript: "check out the confirm booking button" },
+          entries,
+          {
+            apiKey: TEST_API_KEY,
+            fetchFn: modelSaying({
+              actions: [{ verb: "click", elementId: "el_22" }],
+              confidence: 0.94,
+            }),
+          }
+        );
+
+        // el_22 is a button: `check` is invalid for it (SPEC 7.6.2), so the
+        // model's click stands rather than the batch being refused.
+        expect(result.actions).toEqual([{ verb: "click", elementId: "el_22" }]);
+      });
+
+      it("a sequence is never rewritten: the leading verb says nothing about later steps", async () => {
+        const result = await resolveWithGemini(
+          {
+            ...defaultRequest,
+            transcript: "uncheck the fare rules and confirm booking",
+            mode: "sequence",
+          },
+          entries,
+          {
+            apiKey: TEST_API_KEY,
+            fetchFn: modelSaying({
+              actions: [
+                { verb: "click", elementId: "el_21" },
+                { verb: "click", elementId: "el_22" },
+              ],
+              confidence: 0.9,
+            }),
+          }
+        );
+
+        expect(result.actions).toEqual([
+          { verb: "click", elementId: "el_21" },
+          { verb: "click", elementId: "el_22" },
+        ]);
+      });
+    });
 
     it("valid single action produces a validated Action[] (F-06 Criterion)", async () => {
       const mockFetch: typeof fetch = vi.fn(async () => {

@@ -20,8 +20,11 @@ import {
   CONFIRMATION_NAME_MAX_CHARS,
   DEFAULT_ELEVENLABS_MODEL_ID,
   DEFAULT_ELEVENLABS_VOICE_ID,
+  DEFAULT_TTS_RATE,
+  ELEVENLABS_VOICE_SETTINGS,
   TTS_CHUNK_MAX_CHARS,
 } from "../shared/constants";
+import { panForX } from "../shared/spatial";
 
 // ---------------------------------------------------------------------------
 // Module-level state for interruption
@@ -293,7 +296,8 @@ async function speakElevenLabs(
   text: string,
   apiKey: string,
   voiceId: string,
-  tabId: number
+  tabId: number,
+  pan = 0
 ): Promise<void> {
   const controller = new AbortController();
   _activeAbortController = controller;
@@ -313,6 +317,9 @@ async function speakElevenLabs(
         text,
         model_id: DEFAULT_ELEVENLABS_MODEL_ID,
         output_format: "mp3_44100_128",
+        // Without this the API applies the voice's stored defaults, which open
+        // loud and over-emphatic before settling. See ELEVENLABS_VOICE_SETTINGS.
+        voice_settings: ELEVENLABS_VOICE_SETTINGS,
       }),
     });
 
@@ -334,7 +341,7 @@ async function speakElevenLabs(
       target: "content",
       type: "tts.play",
       reqId: crypto.randomUUID(),
-      payload: { audioBase64: base64, mimeType: "audio/mpeg" },
+      payload: { audioBase64: base64, mimeType: "audio/mpeg", pan },
     });
   } catch (err) {
     _activeAbortController = null;
@@ -383,6 +390,19 @@ export interface SpeakOptions {
   elevenLabsVoiceId?: string;
   ttsVoiceName: string | null;
   ttsRate: number;
+  /**
+   * HD-12 ("spatial links"): where on the page the thing being spoken about is,
+   * as a stereo pan in [-1, 1] under SPEC 9.3's `pan(x)`. Omitted or 0 means
+   * centre, which is every utterance that is not about one element.
+   *
+   * SPEC 9.1 records as `[FACT]` that speech cannot be panned, and for
+   * `chrome.tts` that is still true — nothing can route its output into a Web
+   * Audio graph. HD-07's ElevenLabs path is different in kind: it returns an
+   * MP3 the content script decodes itself, so it is already in a graph and a
+   * `StereoPannerNode` is all it takes. This is therefore honoured on the
+   * ElevenLabs path and ignored on the local one.
+   */
+  pan?: number;
 }
 
 /**
@@ -399,10 +419,18 @@ export async function speakText(opts: SpeakOptions): Promise<void> {
     ttsVoiceName,
     ttsRate,
     onDone,
+    pan = 0,
   } = opts;
 
   if (useLocalTts || !elevenLabsApiKey) {
-    // Local path: chrome.tts with sentence chunking
+    // Local path: chrome.tts with sentence chunking. Say which of the two
+    // reasons applied: "the voice sounds wrong" is usually one of these two
+    // silently choosing chrome.tts, and they need opposite fixes.
+    console.info(
+      `[ECHO TTS] engine=chrome.tts reason=${
+        useLocalTts ? "useLocalTts is true" : "no ElevenLabs API key"
+      } rate=${ttsRate}`
+    );
     speakLocal(text, ttsRate, ttsVoiceName, onDone);
     return;
   }
@@ -418,13 +446,17 @@ export async function speakText(opts: SpeakOptions): Promise<void> {
       return;
     }
 
+    console.info(`[ECHO TTS] engine=elevenlabs voice=${elevenLabsVoiceId} tab=${tabId}`);
     // Resolves when playback has finished (the content script answers tts.play on end)
     // or the request was aborted by stopTts().
-    await speakElevenLabs(text, elevenLabsApiKey, elevenLabsVoiceId, tabId);
+    await speakElevenLabs(text, elevenLabsApiKey, elevenLabsVoiceId, tabId, pan);
     onDone?.();
-  } catch {
-    // ElevenLabs failed: fall back to chrome.tts
-    console.warn("[ECHO TTS] ElevenLabs failed; falling back to chrome.tts");
+  } catch (err) {
+    // ElevenLabs failed: fall back to chrome.tts. This await spans the whole
+    // clip, so a rejection here can land mid-playback and start chrome.tts on
+    // top of audio that is still going. Log the cause; a silent swap between
+    // engines is what makes this sound like one voice changing character.
+    console.warn("[ECHO TTS] engine=chrome.tts reason=ElevenLabs failed:", err);
     speakLocal(text, ttsRate, ttsVoiceName, onDone);
   }
 }
@@ -465,7 +497,17 @@ export function stopTts(): void {
  * Load settings and speak text. Convenience wrapper for the service worker.
  * Reads settings from chrome.storage.local.
  */
-export async function speakFromSettings(text: string, onDone?: () => void): Promise<void> {
+export async function speakFromSettings(
+  text: string,
+  onDone?: () => void,
+  /**
+   * HD-12: document-relative x of what this sentence is about, 0..1. Turned
+   * into a pan here rather than by the caller, because this is also where
+   * `settings.spatialLinks` lives — one place decides, and every caller can
+   * simply say where the thing is.
+   */
+  atX?: number
+): Promise<void> {
   try {
     const data = await chrome.storage.local.get("settings");
     const settings = data?.settings as {
@@ -474,7 +516,12 @@ export async function speakFromSettings(text: string, onDone?: () => void): Prom
       elevenLabsVoiceId?: string;
       ttsVoiceName?: string | null;
       ttsRate?: number;
+      spatialLinks?: boolean;
     } | undefined;
+
+    // Default on, like the options page's default. Off, or no position, is centre.
+    const spatial = settings?.spatialLinks !== false;
+    const pan = spatial && typeof atX === "number" ? panForX(atX) : 0;
 
     await speakText({
       text,
@@ -482,12 +529,17 @@ export async function speakFromSettings(text: string, onDone?: () => void): Prom
       elevenLabsApiKey: settings?.elevenLabsApiKey ?? null,
       elevenLabsVoiceId: settings?.elevenLabsVoiceId ?? DEFAULT_ELEVENLABS_VOICE_ID,
       ttsVoiceName: settings?.ttsVoiceName ?? null,
-      ttsRate: settings?.ttsRate ?? 1.6,
+      ttsRate: settings?.ttsRate ?? DEFAULT_TTS_RATE,
       onDone,
+      pan,
     });
-  } catch {
-    // Fallback to a simple chrome.tts.speak if anything above throws
-    chrome.tts.speak(text, { rate: 1.6 });
+  } catch (err) {
+    // Last-resort chrome.tts if anything above throws. This path used to be
+    // silent, which made it indistinguishable from the configured engine while
+    // sounding nothing like it: no voice selection, no chunking, and a hard
+    // coded rate that ignores ttsRate entirely.
+    console.warn("[ECHO TTS] engine=chrome.tts reason=settings/speak threw:", err);
+    chrome.tts.speak(text, { rate: DEFAULT_TTS_RATE });
     onDone?.();
   }
 }

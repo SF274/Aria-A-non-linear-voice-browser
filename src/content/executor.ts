@@ -14,7 +14,8 @@ import {
   type ExecuteResult,
   type StepResult,
 } from "../shared/contracts";
-import { playPositionalTick } from "./audio-stubs";
+import { beginActivity, endActivity } from "./audio/engine";
+import { playPositionalTick } from "./audio/transport";
 import { highlightElement } from "./highlight";
 import { buildElementIndex } from "./index-builder";
 import { computeElementNameAndKey, reResolveElement } from "./reresolve";
@@ -105,6 +106,97 @@ export async function ensureInViewport(el: Element, win: Window): Promise<void> 
 }
 
 /**
+ * Finds the native property setter on the element's prototype chain.
+ *
+ * React (and every other framework with controlled inputs) shadows `value` and
+ * `checked` on the *instance* to track what it last rendered. Assigning through
+ * the instance updates that tracker, so the event we dispatch next looks like
+ * "no change" and the framework silently drops the write. Going through the
+ * prototype setter leaves the tracker stale, which is exactly what makes the
+ * following event register as a real change. DEV-004 (fill), DEV-012 (checked).
+ */
+function nativePropertySetter(
+  element: Element,
+  prop: "value" | "checked"
+): ((v: never) => void) | undefined {
+  for (let proto = Object.getPrototypeOf(element); proto; proto = Object.getPrototypeOf(proto)) {
+    const descriptor = Object.getOwnPropertyDescriptor(proto, prop);
+    if (descriptor?.set) {
+      return descriptor.set as (v: never) => void;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Dispatches the pair of bubbling events a framework listens for after a
+ * programmatic write: `input` first, then `change`, the order a real user
+ * interaction produces.
+ */
+function dispatchInputAndChange(element: Element): void {
+  let inputEvent: Event;
+  try {
+    inputEvent = new InputEvent("input", { bubbles: true, composed: true });
+  } catch {
+    inputEvent = new Event("input", { bubbles: true, composed: true });
+  }
+  element.dispatchEvent(inputEvent);
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/**
+ * Reads the current toggle state of a checkbox, radio, or ARIA switch.
+ * Returns null when the element carries no toggle state at all.
+ */
+export function readCheckedState(element: Element): boolean | null {
+  if ("checked" in element) {
+    return Boolean((element as HTMLInputElement).checked);
+  }
+  const aria = element.getAttribute("aria-checked")?.toLowerCase();
+  if (aria === "true") return true;
+  if (aria === "false") return false;
+  return null;
+}
+
+/**
+ * Drives a toggle to `desired` without a blind click (HD-14, DEV-012).
+ *
+ * SPEC 7.6.3 step 6 says `check -> if !checked, element.click()`. A click is a
+ * *relative* operation: it toggles whatever state the element is in. The caller
+ * has already established that the current state differs from the desired one,
+ * so the direction is known -- but on a React-controlled checkbox a click can
+ * still land the wrong way round, because the DOM's `checked` and React's idea
+ * of it can disagree at the moment the click arrives. Writing the state
+ * absolutely removes the question.
+ */
+function setCheckedState(
+  element: Element,
+  desired: boolean
+): { success: boolean; status?: StepResult["status"]; detail?: string } {
+  if ("checked" in element) {
+    const nativeSetter = nativePropertySetter(element, "checked");
+    if (nativeSetter) {
+      nativeSetter.call(element, desired as never);
+    } else {
+      (element as HTMLInputElement).checked = desired;
+    }
+    // Keep an explicit aria-checked, if the author wrote one, in step with the
+    // property a screen reader would otherwise disagree with.
+    if (element.hasAttribute("aria-checked")) {
+      element.setAttribute("aria-checked", String(desired));
+    }
+    dispatchInputAndChange(element);
+    return { success: true };
+  }
+
+  // A custom widget (role="switch" on a div, say) has no `checked` property to
+  // write: its state lives in the page's own script, and a click is the only
+  // way in. It is not a blind one -- the caller checked aria-checked first.
+  (element as HTMLElement).click();
+  return { success: true };
+}
+
+/**
  * Executes a single verb on the verified live element per SPEC 7.6.3 step 6.
  */
 export function performVerb(
@@ -128,33 +220,17 @@ export function performVerb(
       htmlEl.focus({ preventScroll: true });
       const fillVal = value ?? "";
 
-      // Write through the native prototype setter, found up the chain. React's
-      // controlled-input tracker shadows `value` on the *instance*; assigning
-      // through the instance updates the tracker, the following `input` event
-      // then looks like "no change" and the framework silently drops the fill.
-      let nativeSetter: ((v: string) => void) | undefined;
-      for (let proto = Object.getPrototypeOf(element); proto; proto = Object.getPrototypeOf(proto)) {
-        const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
-        if (descriptor?.set) {
-          nativeSetter = descriptor.set;
-          break;
-        }
-      }
+      // Write through the native prototype setter, found up the chain, then
+      // dispatch `input` and `change`. See nativePropertySetter for why the
+      // instance property is the wrong way in (DEV-004).
+      const nativeSetter = nativePropertySetter(element, "value");
       if (nativeSetter) {
-        nativeSetter.call(element, fillVal);
+        nativeSetter.call(element, fillVal as never);
       } else {
         (element as HTMLInputElement | HTMLTextAreaElement).value = fillVal;
       }
 
-      // Dispatch InputEvent("input", { bubbles: true }) followed by Event("change", { bubbles: true })
-      let inputEvent: Event;
-      try {
-        inputEvent = new InputEvent("input", { bubbles: true, composed: true });
-      } catch {
-        inputEvent = new Event("input", { bubbles: true, composed: true });
-      }
-      element.dispatchEvent(inputEvent);
-      element.dispatchEvent(new Event("change", { bubbles: true }));
+      dispatchInputAndChange(element);
       // Give the keyboard back. A field left focused swallows the next hold-to-talk
       // press as typing (SPEC 6.1), so after a voice fill the user could not speak
       // again without clicking away. Blur also commits blur-validated forms.
@@ -198,24 +274,20 @@ export function performVerb(
       return { success: true };
     }
 
-    case "check": {
-      const isChecked =
-        ("checked" in element && Boolean((element as HTMLInputElement).checked)) ||
-        element.getAttribute("aria-checked")?.toLowerCase() === "true";
-      if (!isChecked) {
-        htmlEl.click();
-      }
-      return { success: true };
-    }
-
+    // `check` and `uncheck` name an absolute state, not a toggle (HD-14). Each
+    // one is a no-op when the element is already in that state, and otherwise
+    // writes the state it names -- never a click, whose direction depends on
+    // what the element currently is.
+    case "check":
     case "uncheck": {
-      const isChecked =
-        ("checked" in element && Boolean((element as HTMLInputElement).checked)) ||
-        element.getAttribute("aria-checked")?.toLowerCase() === "true";
-      if (isChecked) {
-        htmlEl.click();
+      const desired = verb === "check";
+      const current = readCheckedState(element);
+      if (current === desired) {
+        // Already there. The user asked for a state, and the state holds: the
+        // step succeeded, and touching the element could only undo it.
+        return { success: true };
       }
-      return { success: true };
+      return setCheckedState(element, desired);
     }
 
     case "scrollTo":
@@ -260,6 +332,23 @@ function resolveCurrentIndex(
  * @returns ExecuteResult indicating success or failure point
  */
 export async function executeRequest(
+  request: ExecuteRequest,
+  options?: ExecutorOptions
+): Promise<ExecuteResult> {
+  // SPEC 9.8 step 5: while a batch is running, its positional ticks are the
+  // answer to what the user asked for. The DOM changes the batch itself causes
+  // must not sonify underneath them. The window closes as soon as the batch
+  // does, so the page's *response* — results loading in after a click — is
+  // still heard.
+  beginActivity("batch");
+  try {
+    return await runRequest(request, options);
+  } finally {
+    endActivity("batch");
+  }
+}
+
+async function runRequest(
   request: ExecuteRequest,
   options?: ExecutorOptions
 ): Promise<ExecuteResult> {

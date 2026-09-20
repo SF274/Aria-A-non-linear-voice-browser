@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ECHO — Options</title>
+  <title>ECHO Options</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -250,11 +250,59 @@
       </div>
 
       <div class="field">
+        <label for="spatial-links" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input id="spatial-links" type="checkbox" checked style="width: auto; margin: 0;">
+          Spatial links
+        </label>
+        <p class="help-text">Speak answers from where the thing is. When a reply is about one control, the voice is panned to that control&rsquo;s position on the page, so a button on the left is heard on the left. Needs ElevenLabs (uncheck &ldquo;Use Local TTS&rdquo;): chrome.tts output cannot be positioned.</p>
+      </div>
+
+      <div class="field">
+        <label for="mutation-audio" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input id="mutation-audio" type="checkbox" style="width: auto; margin: 0;">
+          Sonify page changes
+        </label>
+        <p class="help-text">Off by default. When on, content appearing on a page makes a sound sized and placed by what arrived: a swell for large additions, one tone per new control, light ticks for changing text.</p>
+      </div>
+
+      <div class="field">
         <label for="elevenlabs-api-key">ElevenLabs API Key</label>
         <input id="elevenlabs-api-key" type="password" placeholder="xi-..." autocomplete="off">
         <p class="help-text">Used for ElevenLabs cloud TTS when Local TTS is unchecked. Persisted to storage only.</p>
       </div>
 
+    </section>
+
+    <!-- F-22: synthetic text detection (HD-13) -->
+    <section aria-labelledby="heading-authenticity">
+      <h2 id="heading-authenticity">Content Authenticity</h2>
+
+      <div class="field">
+        <label for="ai-detection" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input id="ai-detection" type="checkbox" checked style="width: auto; margin: 0;">
+          Warn me about A.I. generated pages
+        </label>
+        <p class="help-text">On by default. Before a page is summarized or answered from, its text is scored by GPTZero. If a lot of it reads as machine written, you hear a one-sentence heads-up first. That is the cue a sighted reader gets from how a page looks, and would otherwise be lost. Pages that score as human written say nothing extra.</p>
+      </div>
+
+      <div class="field">
+        <label for="gptzero-api-key">GPTZero API Key</label>
+        <input id="gptzero-api-key" type="password" placeholder="Your GPTZero key" autocomplete="off">
+        <p class="help-text">Without a key, detection is skipped silently and everything else works unchanged. <strong>The text of the page you are reading is sent to GPTZero when this is on.</strong> Uncheck the box above to stop that entirely.</p>
+      </div>
+
+      <button id="btn-test-gptzero" class="btn btn-secondary" type="button">Test key on a sample</button>
+      <div id="gptzero-status" role="status" aria-live="polite"></div>
+      <p class="help-text">Classifies a fixed machine-written paragraph and tells you the score and which warning it would trigger. Use it to check the key works and to see where the thresholds fall before trusting them on real pages. Testing a key does not save it; use Save Settings below.</p>
+    </section>
+
+    <!--
+      One Save for every settings section, and it must stay last in the document.
+      It used to sit inside the Gemini section, which put the Content Authenticity
+      fields below it: the GPTZero key looked saved because "Test key on a sample"
+      reads the input directly, but nothing was ever written to storage.
+    -->
+    <section aria-label="Save">
       <button id="btn-save" class="btn" type="button">Save Settings</button>
       <div id="save-status" role="status" aria-live="polite"></div>
     </section>

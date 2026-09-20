@@ -37,6 +37,7 @@ import {
   type ResolveMode,
   type Settings,
   TRANSCRIPT_MAX_CHARS,
+  type Verb,
   type Verbosity,
 } from "../shared/contracts";
 import { normalizeTranscript, type NormalizedTranscript } from "../shared/normalize";
@@ -46,10 +47,16 @@ import { matchGlobalIntent, matchTab, runGlobalIntent, scoreTab, type GlobalInte
 import { answerFromContext } from "./commands/local-answers";
 import { VALIDATION_REFUSAL_PHRASE, validateExecuteRequest } from "./execute/validate";
 import { gatherBrowserContext } from "./gemini/context";
+import { detectSynthetic, warningSentenceFor } from "./gptzero/detect";
 import { answerAboutPage } from "./gemini/qa";
 import { resolveWithGemini } from "./gemini/resolver";
 import { toPromptElements } from "./gemini/prompts";
-import { formatClarifyingQuestion, inDocumentOrder, resolveClarificationReply } from "./resolver/clarify";
+import {
+  formatClarifyingQuestion,
+  inDocumentOrder,
+  resolveClarificationReply,
+  verbForClarifiedTarget,
+} from "./resolver/clarify";
 import { resolveLocal } from "./resolver/local";
 import { getSession, onTransition, transitionTo } from "./session";
 import { speakFromSettings, formatConfirmation, type ConfirmationSituation } from "./tts";
@@ -72,9 +79,6 @@ interface RunEnv {
 
 /** "Click the first link and tell me ...": the question waits for the clarified action. */
 let clarifyFollowUp: AskRequest | null = null;
-
-/** Roles a bare "name" command clicks; everything else is focused (SPEC 7.2.2). */
-const CLICK_ROLES = new Set(["button", "link", "checkbox", "radio", "tab", "menuitem", "option"]);
 
 // ---------------------------------------------------------------------------
 // Cancellation (SPEC 4.5: KEY_DOWN cancels the current operation)
@@ -153,14 +157,24 @@ async function loadSettings(): Promise<Partial<Settings>> {
   }
 }
 
-/** Speak and resolve when speech ends, is interrupted, or a generous cap passes. */
-function speakAndWait(text: string): Promise<void> {
+/**
+ * Speak and resolve when speech ends, is interrupted, or a generous cap passes.
+ *
+ * `atX` is HD-12's "spatial links": the document-relative x of whatever the
+ * sentence is about, so the voice arrives from where the thing is. Omitted for
+ * every sentence that is about the page as a whole rather than one element.
+ */
+function speakAndWait(text: string, atX?: number): Promise<void> {
   return new Promise<void>((resolve) => {
     const cap = setTimeout(resolve, MAX_SPOKEN_WAIT_MS);
-    void speakFromSettings(text, () => {
-      clearTimeout(cap);
-      resolve();
-    }).catch(() => {
+    void speakFromSettings(
+      text,
+      () => {
+        clearTimeout(cap);
+        resolve();
+      },
+      atX
+    ).catch(() => {
       clearTimeout(cap);
       resolve();
     });
@@ -182,12 +196,19 @@ function detectMode(raw: string, normalized: NormalizedTranscript): ResolveMode 
   return "single";
 }
 
-function defaultVerb(entry: ElementIndexEntry): Action["verb"] {
-  return CLICK_ROLES.has(entry.role) ? "click" : "focus";
-}
-
 function nameOf(index: ElementIndex, id: string): string {
   return index.entries.find((e) => e.id === id)?.name ?? "";
+}
+
+/**
+ * HD-12: the document-relative x of the element an action targeted, or
+ * undefined when there is no such element. `undefined`, not 0 — 0 is the far
+ * left of the page, and a missing position must read as "centre", not "hard
+ * left".
+ */
+function xOfAction(index: ElementIndex, id: string | undefined): number | undefined {
+  if (!id) return undefined;
+  return index.entries.find((e) => e.id === id)?.x;
 }
 
 // ---------------------------------------------------------------------------
@@ -309,7 +330,15 @@ async function run(transcript: string, signal: AbortSignal, alive: () => boolean
     }
     if (questionOnly === null && local.outcome === "AMBIGUOUS" && local.candidates) {
       // SPEC 7.4: an AMBIGUOUS local result is clarified, not sent to the model.
-      return beginClarification(local.candidates, index, tabId, alive, undefined, followUp);
+      return beginClarification(
+        local.candidates,
+        index,
+        tabId,
+        alive,
+        undefined,
+        followUp,
+        normalized.verb
+      );
     }
   }
 
@@ -357,7 +386,15 @@ async function run(transcript: string, signal: AbortSignal, alive: () => boolean
         .map((id) => index.entries.find((e) => e.id === id))
         .filter((e): e is ElementIndexEntry => e !== undefined && e.enabled && !e.isPassword);
       if (candidates.length >= 2 && candidates.length <= 4) {
-        return beginClarification(candidates, index, tabId, alive, result.clarifyingQuestion, followUp);
+        return beginClarification(
+          candidates,
+          index,
+          tabId,
+          alive,
+          result.clarifyingQuestion,
+          followUp,
+          normalized.verb
+        );
       }
       return failWith(result.spokenMessage ?? "I'm not sure which one you mean.", alive);
     }
@@ -462,7 +499,14 @@ async function pickTab(query: string, currentId: number): Promise<number> {
 async function fetchPageText(tabId: number, maxChars: number): Promise<{ text: string } | null> {
   // A tab that just finished loading may not have its content script yet: one retry.
   for (let attempt = 0; attempt < 2; attempt++) {
-    const page = await sendToContent<{ text?: unknown }>(tabId, "page.text", { maxChars }, PAGE_TEXT_TIMEOUT_MS);
+    // HD-14: paragraph breaks are kept so the classifier can score sections.
+    // The answer prompt is unaffected — it re-sanitizes and collapses anyway.
+    const page = await sendToContent<{ text?: unknown }>(
+      tabId,
+      "page.text",
+      { maxChars, preserveParagraphs: true },
+      PAGE_TEXT_TIMEOUT_MS
+    );
     if (page && typeof page.text === "string") return { text: page.text };
     if (attempt === 0) await sleep(300);
   }
@@ -506,14 +550,30 @@ async function runAnswer(ask: AskRequest, env: RunEnv, opts: AnswerOptions = {})
   if (!page) return failWith(say("I can't read this page."), alive);
   if (!page.text.trim()) return failWith(say("This page has no text I can read."), alive);
 
+  // F-22 (HD-13): start the synthetic-text check now so it runs underneath the
+  // context gather rather than after it. It resolves to null on any failure and
+  // never rejects, so nothing below has to handle it going wrong.
+  const detection = detectSynthetic(page.text, {
+    apiKey: settings.gptZeroApiKey ?? null,
+    enabled: settings.aiDetection !== false,
+    signal,
+  });
+
   const context = await gatherBrowserContext(targetId, { justNavigatedFrom: opts.justNavigatedFrom });
   if (!alive()) return;
 
   const stopTicks = startProcessingTicks(frontId, audioEnabled);
   let answer: Awaited<ReturnType<typeof answerAboutPage>>;
+  let warning: string | null;
   try {
+    // Already settled in the common case: it has been running since before the
+    // context gather. `detectSynthetic` never rejects, so this cannot throw.
+    // Worst case it adds GPTZERO_TIMEOUT_MS minus the gather, and the processing
+    // ticks above are already playing through it, so the wait is never silent.
+    const authenticity = await detection;
+    warning = warningSentenceFor(authenticity);
     answer = await answerAboutPage(
-      { kind: ask.kind, question: ask.question, pageText: page.text, context, verbosity },
+      { kind: ask.kind, question: ask.question, pageText: page.text, context, verbosity, authenticity },
       { apiKey: settings.geminiApiKey ?? null, model: settings.geminiModel, signal }
     );
   } finally {
@@ -524,9 +584,17 @@ async function runAnswer(ask: AskRequest, env: RunEnv, opts: AnswerOptions = {})
 
   if (!answer.ok) {
     console.warn("[ECHO SW] page answer failed:", answer.error ?? "");
-    return failWith(say(answer.text), alive);
+    // The warning still goes out. A page the extension could not summarize is
+    // not a page the user should be told less about.
+    return failWith(say(join(warning, answer.text)), alive);
   }
-  return speakAnswer(say(answer.text), alive);
+  return speakAnswer(say(join(warning, answer.text)), alive);
+}
+
+/** The warning first, then the answer. Spoken in that order for a reason: it is
+ * the one thing the user needs before they start trusting what follows. */
+function join(warning: string | null, sentence: string): string {
+  return warning ? `${warning} ${sentence}` : sentence;
 }
 
 async function speakAnswer(sentence: string, alive: () => boolean): Promise<void> {
@@ -711,6 +779,10 @@ async function executeActions(
   }
 
   const sentence = formatConfirmation(situationFor(result, actions, index), verbosity);
+  // HD-12: the confirmation is about a specific control, and the index knows
+  // where that control is. Speak it from there. For a sequence, the last step
+  // is where the user's attention ended up.
+  const spokenAboutX = xOfAction(index, actions[actions.length - 1]?.elementId);
 
   if (!result.ok) {
     // ACTION_FAILED → ERROR → speak the partial-failure sentence → IDLE (SPEC 4.5, 6.12).
@@ -730,7 +802,7 @@ async function executeActions(
   }
 
   await transitionTo("CONFIRMING");
-  await speakAndWait(sentence);
+  await speakAndWait(sentence, spokenAboutX);
   // TTS_DONE → IDLE, unless the user talked over it and KEY_DOWN already moved us on.
   if (alive() && (await getSession()).state === "CONFIRMING") {
     await transitionTo("IDLE", { clarification: null });
@@ -786,7 +858,8 @@ async function beginClarification(
   tabId: number,
   alive: () => boolean,
   modelQuestion?: string,
-  followUp: AskRequest | null = null
+  followUp: AskRequest | null = null,
+  spokenVerb: Verb | null = null
 ): Promise<void> {
   if (!alive()) return;
   clarifyFollowUp = followUp;
@@ -805,6 +878,8 @@ async function beginClarification(
     buildId: index.buildId,
     createdAt: now,
     expiresAt: now + CLARIFY_TIMEOUT_MS,
+    // HD-14: pin the verb, not just the candidates. See ClarificationState.
+    ...(spokenVerb !== null ? { verb: spokenVerb } : {}),
   };
 
   await transitionTo("CLARIFYING", { clarification });
@@ -834,8 +909,11 @@ async function handleClarificationReply(
   if (reply.kind === "resolved" && reply.entry.enabled) {
     const followUp = clarifyFollowUp;
     clarifyFollowUp = null;
+    // HD-14: the verb the command named survives the question. Without it,
+    // "uncheck one of these" becomes a click on whichever box was named, and a
+    // click toggles -- so an already-unchecked box would come back on.
     return executeActions(
-      [{ verb: defaultVerb(reply.entry), elementId: reply.entry.id }],
+      [{ verb: verbForClarifiedTarget(reply.entry, pinned.verb), elementId: reply.entry.id }],
       index,
       tabId,
       env,

@@ -17,7 +17,8 @@
 
 import { ENVELOPE_NS } from "../shared/contracts";
 import type { Envelope } from "../shared/contracts";
-import { resumeAudioContext, playListenStart, playListenEnd } from "./audio-stubs";
+import { resumeAudioContext } from "./audio/engine";
+import { playListenStart, playListenEnd } from "./audio/transport";
 
 // ---------------------------------------------------------------------------
 // Settings

@@ -3,6 +3,8 @@ import {
   SettingsSchema,
   type Verbosity,
 } from "../shared/contracts";
+import { classifyText, resetGptZeroSession } from "../sw/gptzero/client";
+import { parseVerdict, warningSentenceFor } from "../sw/gptzero/detect";
 
 interface SpeechRecognitionAvailableOptions {
   langs: string[];
@@ -29,8 +31,12 @@ const DEFAULT_SETTINGS: Settings = {
   scanKey: "KeyM",
   telemetryEnabled: false,
   audioEnabled: true,
+  spatialLinks: true,
+  mutationAudio: false,
   useLocalTts: true,
   elevenLabsApiKey: null,
+  gptZeroApiKey: null,
+  aiDetection: true,
 };
 
 function getSpeechRecognitionStatic(): SpeechRecognitionStatic | null {
@@ -83,6 +89,18 @@ export async function saveSettings(): Promise<Settings> {
   const useLocalTtsVal = useLocalTtsCheckbox ? useLocalTtsCheckbox.checked : true;
   const elevenLabsKeyVal = elevenLabsKeyInput?.value.trim() ?? "";
 
+  // HD-12: spatial links defaults on, page sonification defaults off. A missing
+  // checkbox falls back to the default rather than to `false`, so a partially
+  // rendered page cannot quietly turn a feature off on save.
+  const spatialLinksCheckbox = document.getElementById("spatial-links") as HTMLInputElement | null;
+  const mutationAudioCheckbox = document.getElementById("mutation-audio") as HTMLInputElement | null;
+
+  // HD-13 (F-22). Same rule as above: a missing checkbox keeps the default, so a
+  // half-rendered page cannot silently switch the warning off.
+  const aiDetectionCheckbox = document.getElementById("ai-detection") as HTMLInputElement | null;
+  const gptZeroKeyInput = document.getElementById("gptzero-api-key") as HTMLInputElement | null;
+  const gptZeroKeyVal = gptZeroKeyInput?.value.trim() ?? "";
+
   const newSettings: Settings = {
     ...current,
     geminiApiKey: apiKeyVal.length > 0 ? apiKeyVal : null,
@@ -91,6 +109,10 @@ export async function saveSettings(): Promise<Settings> {
     ttsRate: rateVal,
     useLocalTts: useLocalTtsVal,
     elevenLabsApiKey: elevenLabsKeyVal.length > 0 ? elevenLabsKeyVal : null,
+    spatialLinks: spatialLinksCheckbox ? spatialLinksCheckbox.checked : true,
+    mutationAudio: mutationAudioCheckbox ? mutationAudioCheckbox.checked : false,
+    gptZeroApiKey: gptZeroKeyVal.length > 0 ? gptZeroKeyVal : null,
+    aiDetection: aiDetectionCheckbox ? aiDetectionCheckbox.checked : true,
   };
 
   const parsed = SettingsSchema.safeParse(newSettings);
@@ -419,6 +441,76 @@ export async function runGateIG10(): Promise<string> {
   return block;
 }
 
+/**
+ * HD-13: classify a fixed machine-written paragraph and report what came back.
+ *
+ * Two jobs. The obvious one is telling the user whether their key works without
+ * making them run a whole voice command. The other is the one that matters: it
+ * shows the actual score, so the thresholds in `constants.ts` can be checked
+ * against reality rather than trusted. They are reasoned defaults and have
+ * never been calibrated (DEV-011).
+ */
+const GPTZERO_PROBE_SAMPLE =
+  "In today's rapidly evolving digital landscape, businesses must leverage innovative solutions to " +
+  "stay ahead of the curve. By harnessing the power of cutting-edge technology, organizations can " +
+  "unlock unprecedented opportunities for growth and drive meaningful transformation across every " +
+  "facet of their operations. It is important to note that a comprehensive approach, one that " +
+  "carefully balances efficiency with scalability, remains essential for long-term success. " +
+  "Furthermore, by fostering a culture of continuous improvement, companies can ensure that they " +
+  "remain well positioned to navigate the challenges and opportunities that lie ahead in an " +
+  "increasingly competitive and interconnected global marketplace.";
+
+export async function testGptZeroKey(): Promise<string> {
+  const statusEl = document.getElementById("gptzero-status");
+  const keyInput = document.getElementById("gptzero-api-key") as HTMLInputElement | null;
+  const report = (text: string, ok: boolean): string => {
+    if (statusEl) {
+      statusEl.className = ok ? "" : "error-text";
+      statusEl.textContent = text;
+    }
+    console.log(`[ECHO GPTZero] ${text}`);
+    return text;
+  };
+
+  // Read the field, not storage: no need to save before testing.
+  const apiKey = keyInput?.value.trim() || (await loadSettings()).gptZeroApiKey || "";
+  if (!apiKey) return report("No GPTZero key entered. Detection is off; everything else works.", false);
+
+  if (statusEl) statusEl.textContent = "Checking...";
+  resetGptZeroSession();
+  try {
+    const body = await classifyText(GPTZERO_PROBE_SAMPLE, { apiKey, timeoutMs: 10_000 });
+    const verdict = parseVerdict(body, GPTZERO_PROBE_SAMPLE.length);
+    if (!verdict) {
+      return report(
+        "The key works, but the response had no score this build recognises. Detection will stay silent. " +
+          "See the console for the raw body.",
+        false
+      );
+    }
+    console.log("[ECHO GPTZero] raw response:", body.slice(0, 2000));
+    const percent = Math.round(verdict.aiProbability * 100);
+    const spoken = warningSentenceFor(verdict);
+    const consequence = spoken ? `You would hear: "${spoken}"` : "This would trigger no warning.";
+    return report(
+      `Key works. Sample scored ${percent}% A.I.` +
+        `${verdict.classification ? ` (${verdict.classification})` : ""}. ${consequence}`,
+      true
+    );
+  } catch (err) {
+    const code = (err as { code?: string }).code ?? "ERROR";
+    const detail =
+      code === "AUTH_ERROR"
+        ? "the key was rejected"
+        : code === "RATE_LIMITED"
+          ? "the account is rate limited"
+          : code === "TIMEOUT"
+            ? "it did not answer in time"
+            : "the request failed";
+    return report(`GPTZero check failed: ${detail} (${code}). Detection stays silent; nothing else breaks.`, false);
+  }
+}
+
 export async function initOptionsPage(): Promise<void> {
   const apiKeyInput = document.getElementById("gemini-api-key") as HTMLInputElement | null;
   const modelInput = document.getElementById("gemini-model") as HTMLInputElement | null;
@@ -451,6 +543,21 @@ export async function initOptionsPage(): Promise<void> {
   if (elevenLabsKeyInput && settings.elevenLabsApiKey) {
     elevenLabsKeyInput.value = settings.elevenLabsApiKey;
   }
+
+  // HD-12
+  const spatialLinksCheckbox = document.getElementById("spatial-links") as HTMLInputElement | null;
+  const mutationAudioCheckbox = document.getElementById("mutation-audio") as HTMLInputElement | null;
+  if (spatialLinksCheckbox) spatialLinksCheckbox.checked = settings.spatialLinks;
+  if (mutationAudioCheckbox) mutationAudioCheckbox.checked = settings.mutationAudio;
+
+  // HD-13
+  const aiDetectionCheckbox = document.getElementById("ai-detection") as HTMLInputElement | null;
+  const gptZeroKeyInput = document.getElementById("gptzero-api-key") as HTMLInputElement | null;
+  if (aiDetectionCheckbox) aiDetectionCheckbox.checked = settings.aiDetection;
+  if (gptZeroKeyInput && settings.gptZeroApiKey) gptZeroKeyInput.value = settings.gptZeroApiKey;
+  document.getElementById("btn-test-gptzero")?.addEventListener("click", () => {
+    void testGptZeroKey();
+  });
 
   saveBtn?.addEventListener("click", () => {
     void saveSettings();

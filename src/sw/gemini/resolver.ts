@@ -11,6 +11,7 @@ import {
   type PromptElement,
   type ResolveRequest,
   ResolverResponseSchema,
+  type Verb,
 } from "../../shared/contracts";
 import {
   MALFORMED_CONFIDENCE_PENALTY,
@@ -26,6 +27,7 @@ import {
   buildResolverRequestBody,
   toPromptElements,
 } from "./prompts";
+import { normalizeTranscript } from "../../shared/normalize";
 import { isValidVerbForRole } from "../execute/validate";
 import type { BrowserContext } from "./context";
 
@@ -69,6 +71,19 @@ function extractModelOutput(rawBodyText: string): unknown {
     return JSON.parse(textPart);
   }
   return outer;
+}
+
+/**
+ * The explicit toggle the command asked for, or null if it asked for no toggle.
+ *
+ * HD-14: "check" and "uncheck" name a state to end in. `click` only toggles
+ * whichever state the element happens to be in, so a command that names a state
+ * must never execute as one -- the model cannot see the live checkbox and is in
+ * no position to pick the direction.
+ */
+export function toggleIntentOf(transcript: string): "check" | "uncheck" | null {
+  const verb = normalizeTranscript(transcript).verb;
+  return verb === "check" || verb === "uncheck" ? verb : null;
 }
 
 /**
@@ -220,6 +235,9 @@ export async function resolveWithGemini(
   }
 
   // 8. Action validation and elementId membership check (SPEC §7.6.1, §11.4 rule 3)
+  // HD-14: a command that named a state ("uncheck the nonstop filter") is held
+  // to that state even when the model answers with the toggling `click`.
+  const toggleIntent = toggleIntentOf(request.transcript);
   const validatedActions: Action[] = [];
   for (const rawAction of rawActions) {
     // Unknown elementId check: must exist in index
@@ -249,10 +267,23 @@ export async function resolveWithGemini(
       };
     }
 
+    // HD-14: rewrite `click` to the toggle the user actually named. Only for a
+    // lone action -- in a sequence the leading verb says nothing about the
+    // later steps -- and only onto a role that can take it (SPEC §7.6.2).
+    let verb: Verb = rawAction.verb;
+    if (
+      toggleIntent !== null &&
+      verb === "click" &&
+      rawActions.length === 1 &&
+      isValidVerbForRole(toggleIntent, targetEntry)
+    ) {
+      verb = toggleIntent;
+    }
+
     // Verb role validity (SPEC §7.6.2)
-    if (!isValidVerbForRole(rawAction.verb, targetEntry)) {
+    if (!isValidVerbForRole(verb, targetEntry)) {
       console.warn(
-        `[ECHO Gemini] Verb "${rawAction.verb}" invalid for role "${targetEntry.role}"`
+        `[ECHO Gemini] Verb "${verb}" invalid for role "${targetEntry.role}"`
       );
       return {
         outcome: "MISS",
@@ -266,7 +297,7 @@ export async function resolveWithGemini(
     // Action value rules (SPEC §5.6, §7.6.1 rules 6 & 7):
     // Extra properties (e.g. selector, xpath) are explicitly omitted when constructing the Action.
     const actionCandidate: Record<string, unknown> = {
-      verb: rawAction.verb,
+      verb,
       elementId: rawAction.elementId,
     };
     if (rawAction.value !== undefined) {

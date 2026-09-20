@@ -540,6 +540,13 @@ describe("ClarificationStateSchema (SPEC 5.9)", () => {
   it("rejects a question longer than 90 chars", () => {
     expect(accepts(ClarificationStateSchema, { ...valid, question: "q".repeat(91) })).toBe(false);
   });
+
+  it("carries the verb the command named, optionally, and only from the closed enum (HD-14)", () => {
+    expect(ClarificationStateSchema.parse({ ...valid, verb: "uncheck" }).verb).toBe("uncheck");
+    // Absent when the command named no verb, which is the common case.
+    expect(ClarificationStateSchema.parse(valid).verb).toBeUndefined();
+    expect(accepts(ClarificationStateSchema, { ...valid, verb: "navigate" })).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -656,10 +663,51 @@ describe("SettingsSchema (SPEC 5.13)", () => {
     audioEnabled: true,
     useLocalTts: true,
     elevenLabsApiKey: null,
+    mutationAudio: false,
+    spatialLinks: true,
+    gptZeroApiKey: null,
+    aiDetection: true,
   };
 
   it("accepts the default settings", () => {
     expect(SettingsSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("HD-12: page sonification defaults off and spatial links default on", () => {
+    // The direction of each default is the decision, not an accident: the human
+    // asked for page noise to be gone and for spatial speech to be the norm.
+    const parsed = SettingsSchema.parse({
+      geminiApiKey: null,
+      geminiModel: "gemini-model-id",
+      verbosity: "fast",
+      ttsVoiceName: null,
+      ttsRate: 1.6,
+      holdKey: "Space",
+      scanKey: "KeyM",
+      telemetryEnabled: false,
+      audioEnabled: true,
+    });
+    expect(parsed.mutationAudio).toBe(false);
+    expect(parsed.spatialLinks).toBe(true);
+  });
+
+  it("HD-13: A.I. detection defaults on and its key defaults to null", () => {
+    // On by default because the warning is the point of the feature: a user who
+    // never opens this page should still get it. Null key means it stays silent
+    // until one is set, rather than failing loudly on every page.
+    const parsed = SettingsSchema.parse({
+      geminiApiKey: null,
+      geminiModel: "gemini-model-id",
+      verbosity: "fast",
+      ttsVoiceName: null,
+      ttsRate: 1.6,
+      holdKey: "Space",
+      scanKey: "KeyM",
+      telemetryEnabled: false,
+      audioEnabled: true,
+    });
+    expect(parsed.aiDetection).toBe(true);
+    expect(parsed.gptZeroApiKey).toBeNull();
   });
 
   it("defaults useLocalTts to true and elevenLabsApiKey to null if omitted", () => {

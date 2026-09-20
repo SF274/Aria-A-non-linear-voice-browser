@@ -18,6 +18,7 @@
     "test": "vitest run test/unit test/dom && vitest run test/perf",
     "test:e2e": "playwright test",
     "gate:gemini": "tsx scripts/gate-gemini.ts",
+    "gate:gptzero": "tsx scripts/gate-gptzero.ts",
     "gen:audio": "tsx scripts/generate-test-audio.ts",
     "verify": "pnpm run build && pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run test:e2e",
     "demo": "vite demo"
