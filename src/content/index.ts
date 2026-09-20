@@ -144,7 +144,7 @@ if (typeof document !== "undefined") {
       },
     });
   } catch (err) {
-    console.warn("[ECHO] Failed to initialize mutation observer:", err);
+    console.warn("[Aria] Failed to initialize mutation observer:", err);
   }
 }
 
@@ -360,7 +360,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
             source.start(t0);
           } catch (err) {
-            console.warn("[ECHO] Failed to decode/play ElevenLabs audio:", err);
+            console.warn("[Aria] Failed to decode/play ElevenLabs audio:", err);
             sendResponse({ ok: false, error: String(err) });
           }
         })();
@@ -429,4 +429,4 @@ if (typeof window !== "undefined") {
 }
 
 // SPEC 16, F-01: the content script logs a single readiness line on inject.
-console.log("[ECHO] content script ready");
+console.log("[Aria] content script ready");

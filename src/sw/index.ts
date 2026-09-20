@@ -117,7 +117,7 @@ async function getRecognitionConfig(): Promise<{ processLocally: boolean; lang: 
 
 setOnWatchdogFired(() => {
   // 15 s elapsed since KEY_DOWN without a KEY_UP. Force-stop.
-  console.warn("[ECHO SW] Watchdog fired — forcing stt.stop");
+  console.warn("[Aria SW] Watchdog fired — forcing stt.stop");
   sendToOffscreen("stt.stop", {});
   void transitionTo("TRANSCRIBING");
 });
@@ -127,12 +127,12 @@ setOnTranscribingTimeout(() => {
   void (async () => {
     const session = await getSession();
     if (session.lastInterim) {
-      console.log("[ECHO SW] Transcribing timeout — promoting interim:", session.lastInterim);
+      console.log("[Aria SW] Transcribing timeout — promoting interim:", session.lastInterim);
       await updateTranscript(null, session.lastInterim);
       await transitionTo("RESOLVING", { finalTranscript: session.lastInterim });
       void runPipeline(session.lastInterim);
     } else {
-      console.warn("[ECHO SW] Transcribing timeout — no result, entering ERROR");
+      console.warn("[Aria SW] Transcribing timeout — no result, entering ERROR");
       speak("Something went wrong with speech.");
       await transitionTo("IDLE");
     }
@@ -142,7 +142,7 @@ setOnTranscribingTimeout(() => {
 setOnClarifyTimeout(() => {
   // 15 s with no clarification response — discard and return to IDLE.
   void (async () => {
-    console.log("[ECHO SW] Clarification timeout — returning to IDLE");
+    console.log("[Aria SW] Clarification timeout — returning to IDLE");
     await transitionTo("IDLE", { clarification: null });
   })();
 });
@@ -176,7 +176,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
       try {
         micGranted = await ensureMicPermission();
       } catch (err) {
-        console.error("[ECHO SW] mic permission error", err);
+        console.error("[Aria SW] mic permission error", err);
       }
 
       if (!micGranted) {
@@ -190,7 +190,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
       try {
         await ensureOffscreen();
       } catch (err) {
-        console.error("[ECHO SW] ensureOffscreen failed", err);
+        console.error("[Aria SW] ensureOffscreen failed", err);
         speak("Something went wrong. Please reload the extension.");
         await transitionTo("IDLE");
         sendResponse({ ok: false });
@@ -228,7 +228,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
       if (session.keyDownAt !== null) {
         const elapsed = Date.now() - session.keyDownAt;
         if (elapsed < HOLD_MIN_DURATION_MS) {
-          console.log(`[ECHO SW] Tap discarded (${elapsed} ms < 250 ms)`);
+          console.log(`[Aria SW] Tap discarded (${elapsed} ms < 250 ms)`);
           sendToOffscreen("stt.abort", {});
           await transitionTo("IDLE");
           sendResponse({ ok: true });
@@ -258,7 +258,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
       };
 
       if (await ignoreRealStt()) {
-        console.log("[ECHO SW] real recognizer heard:", JSON.stringify(transcript), "final=" + isFinal);
+        console.log("[Aria SW] real recognizer heard:", JSON.stringify(transcript), "final=" + isFinal);
         return;
       }
 
@@ -277,7 +277,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
         // there is nothing left for the recognizer to deliver.
         sendToOffscreen("stt.stop", {});
         await transitionTo("RESOLVING", { finalTranscript: transcript });
-        console.log("[ECHO SW] Final transcript:", transcript);
+        console.log("[Aria SW] Final transcript:", transcript);
         void runPipeline(transcript);
       } else {
         await updateTranscript(transcript, null);
@@ -292,7 +292,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
   // =========================================================================
   if (msg.type === "stt.event") {
     const { name } = msg.payload as { name: string };
-    console.log("[ECHO SW] stt.event", name);
+    console.log("[Aria SW] stt.event", name);
     return undefined;
   }
 
@@ -306,7 +306,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
         message: string;
       };
 
-      console.warn("[ECHO SW] stt.error", code, errorMessage);
+      console.warn("[Aria SW] stt.error", code, errorMessage);
       if (await ignoreRealStt()) return;
 
       // SPEC §4.5: STT_ERROR is an edge out of LISTENING / TRANSCRIBING only. An
@@ -386,7 +386,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
   if ((typeof __ECHO_DEV__ !== "undefined" && __ECHO_DEV__) && msg.type === "test.transcript") {
     void (async () => {
       const { transcript } = msg.payload as { transcript: string };
-      console.log("[ECHO SW] test.transcript injected:", transcript);
+      console.log("[Aria SW] test.transcript injected:", transcript);
       await updateTranscript(null, transcript);
       await transitionTo("RESOLVING", { finalTranscript: transcript });
       void runPipeline(transcript);

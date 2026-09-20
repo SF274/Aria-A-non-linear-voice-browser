@@ -169,7 +169,7 @@ export async function answerAboutPage(req: AnswerRequest, options: AnswerOptions
   // Spoken as written. It is never parsed for actions (SPEC 8.5).
   const text = cleanSpokenText(extractText(body));
   if (!text) {
-    console.warn(`[ECHO Gemini] Empty answer. Response byte length: ${body.length}`);
+    console.warn(`[Aria Gemini] Empty answer. Response byte length: ${body.length}`);
     return { ok: false, text: ANSWER_FAILURE_SENTENCE, error: "EMPTY_ANSWER" };
   }
   return { ok: true, text };

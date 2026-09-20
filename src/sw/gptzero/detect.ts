@@ -448,7 +448,7 @@ export async function detectSynthetic(
     return verdict;
   } catch (err) {
     const code = err instanceof GptZeroError ? err.code : "UNKNOWN";
-    console.warn(`[ECHO GPTZero] detection skipped: ${code}`);
+    console.warn(`[Aria GPTZero] detection skipped: ${code}`);
     return null;
   }
 }

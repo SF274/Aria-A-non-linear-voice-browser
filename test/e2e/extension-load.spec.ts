@@ -66,7 +66,7 @@ test("extension loads with zero console errors and the content script announces 
 
     const readinessLogSeen = new Promise<void>((resolveLog) => {
       page.on("console", (msg) => {
-        if (msg.text().includes("[ECHO] content script ready")) resolveLog();
+        if (msg.text().includes("[Aria] content script ready")) resolveLog();
       });
     });
 

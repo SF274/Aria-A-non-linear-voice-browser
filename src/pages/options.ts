@@ -3,6 +3,7 @@ import {
   SettingsSchema,
   type Verbosity,
 } from "../shared/contracts";
+import { GPTZERO_MAX_CHARS, GPTZERO_TIMEOUT_MS } from "../shared/constants";
 import { classifyText, resetGptZeroSession } from "../sw/gptzero/client";
 import { parseVerdict, warningSentenceFor } from "../sw/gptzero/detect";
 
@@ -65,7 +66,7 @@ export async function loadSettings(): Promise<Settings> {
       }
     }
   } catch (err) {
-    console.warn("[ECHO] Failed to load settings from storage:", err);
+    console.warn("[Aria] Failed to load settings from storage:", err);
   }
   return DEFAULT_SETTINGS;
 }
@@ -252,7 +253,7 @@ export async function runGateIG03(): Promise<string> {
     resultDetail = "chrome.tts API not available in this context";
   } else {
     // Ten sentences, as SPEC 10.6.2 chunks a long utterance.
-    const testSentence = "ECHO operates any web page by voice with the screen off. ";
+    const testSentence = "Aria operates any web page by voice with the screen off. ";
     const passage = testSentence.repeat(10);
     const sentences = passage.match(/[^.!?]+[.!?]+/g) || [passage];
 
@@ -460,6 +461,15 @@ const GPTZERO_PROBE_SAMPLE =
   "remain well positioned to navigate the challenges and opportunities that lie ahead in an " +
   "increasingly competitive and interconnected global marketplace.";
 
+/** The probe repeated to the size a real page actually sends. */
+function buildFullSizeSample(): string {
+  let out = GPTZERO_PROBE_SAMPLE;
+  while (out.length < GPTZERO_MAX_CHARS) out += `
+
+${GPTZERO_PROBE_SAMPLE}`;
+  return out.slice(0, GPTZERO_MAX_CHARS);
+}
+
 export async function testGptZeroKey(): Promise<string> {
   const statusEl = document.getElementById("gptzero-status");
   const keyInput = document.getElementById("gptzero-api-key") as HTMLInputElement | null;
@@ -468,7 +478,7 @@ export async function testGptZeroKey(): Promise<string> {
       statusEl.className = ok ? "" : "error-text";
       statusEl.textContent = text;
     }
-    console.log(`[ECHO GPTZero] ${text}`);
+    console.log(`[Aria GPTZero] ${text}`);
     return text;
   };
 
@@ -479,7 +489,14 @@ export async function testGptZeroKey(): Promise<string> {
   if (statusEl) statusEl.textContent = "Checking...";
   resetGptZeroSession();
   try {
-    const body = await classifyText(GPTZERO_PROBE_SAMPLE, { apiKey, timeoutMs: 10_000 });
+    // Two calls, because the small one alone hid a real bug. The short probe
+    // answers "does the key work"; the full-size one answers "will a warning
+    // actually arrive before a real page is read", which is the question that
+    // matters. Both run under the production timeout, not a generous one, so a
+    // budget that is too small fails here instead of failing silently later.
+    const started = Date.now();
+    const body = await classifyText(GPTZERO_PROBE_SAMPLE, { apiKey, timeoutMs: GPTZERO_TIMEOUT_MS });
+    const shortMs = Date.now() - started;
     const verdict = parseVerdict(body, GPTZERO_PROBE_SAMPLE.length);
     if (!verdict) {
       return report(
@@ -488,14 +505,37 @@ export async function testGptZeroKey(): Promise<string> {
         false
       );
     }
-    console.log("[ECHO GPTZero] raw response:", body.slice(0, 2000));
+    console.log("[Aria GPTZero] raw response:", body.slice(0, 2000));
+
+    // A real page sends GPTZERO_MAX_CHARS, not a paragraph. Time that too.
+    const realistic = buildFullSizeSample();
+    const bigStarted = Date.now();
+    let bigMs = -1;
+    let sections = -1;
+    try {
+      const bigBody = await classifyText(realistic, { apiKey, timeoutMs: GPTZERO_TIMEOUT_MS });
+      bigMs = Date.now() - bigStarted;
+      const bigVerdict = parseVerdict(bigBody, realistic.length);
+      sections = bigVerdict?.paragraphsConsidered ?? -1;
+      console.log(
+        `[Aria GPTZero] full-size probe: ${realistic.length} chars in ${bigMs} ms, ` +
+          `${sections} sections considered, ${bigVerdict?.flagged.length ?? 0} flagged`
+      );
+    } catch {
+      bigMs = -1;
+    }
+
     const percent = Math.round(verdict.aiProbability * 100);
     const spoken = warningSentenceFor(verdict);
     const consequence = spoken ? `You would hear: "${spoken}"` : "This would trigger no warning.";
+    const timing =
+      bigMs < 0
+        ? ` A full-size page (${realistic.length} chars) did NOT come back within ${GPTZERO_TIMEOUT_MS} ms, so real pages will be read with no warning.`
+        : ` Timing: ${shortMs} ms for a paragraph, ${bigMs} ms for a full-size page (${sections} sections), budget ${GPTZERO_TIMEOUT_MS} ms.`;
     return report(
       `Key works. Sample scored ${percent}% A.I.` +
-        `${verdict.classification ? ` (${verdict.classification})` : ""}. ${consequence}`,
-      true
+        `${verdict.classification ? ` (${verdict.classification})` : ""}. ${consequence}${timing}`,
+      bigMs >= 0
     );
   } catch (err) {
     const code = (err as { code?: string }).code ?? "ERROR";

@@ -47,7 +47,7 @@ test.describe("Action Executor E2E (SPEC 7.6, 12.8, 12.10, 16 F-07)", () => {
 
       const readinessLogSeen = new Promise<void>((resolveLog) => {
         page.on("console", (msg) => {
-          if (msg.text().includes("[ECHO] content script ready")) resolveLog();
+          if (msg.text().includes("[Aria] content script ready")) resolveLog();
         });
       });
 
@@ -141,7 +141,7 @@ test.describe("Action Executor E2E (SPEC 7.6, 12.8, 12.10, 16 F-07)", () => {
 
       const readinessLogSeen = new Promise<void>((resolveLog) => {
         page.on("console", (msg) => {
-          if (msg.text().includes("[ECHO] content script ready")) resolveLog();
+          if (msg.text().includes("[Aria] content script ready")) resolveLog();
         });
       });
 
@@ -230,7 +230,7 @@ test.describe("Action Executor E2E (SPEC 7.6, 12.8, 12.10, 16 F-07)", () => {
 
       const readinessLogSeen = new Promise<void>((resolveLog) => {
         page.on("console", (msg) => {
-          if (msg.text().includes("[ECHO] content script ready")) resolveLog();
+          if (msg.text().includes("[Aria] content script ready")) resolveLog();
         });
       });
 

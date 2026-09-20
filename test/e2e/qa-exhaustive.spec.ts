@@ -905,7 +905,7 @@ test.describe("Suite F: global commands (tabs, search, save)", () => {
     const demoUrl = q.page.url();
 
     // Two tabs in the window: the demo page and the harness's extension page.
-    await say(q, "Next tab.", "ECHO Options.");
+    await say(q, "Next tab.", "Aria Options.");
     expect(await activeUrl(q)).toContain("options.html");
     await say(q, "Previous tab.", "Northbound Air.");
     expect(await activeUrl(q)).toBe(demoUrl);
@@ -1104,7 +1104,7 @@ test.describe("Suite G: page questions, date/time, tabs", () => {
     // The harness window holds the demo page, the options page and a blank tab.
     expect(tabs[0]).toMatch(/^You have \d+ tabs open\. 1, /);
     expect(tabs[0]).toContain("Northbound Air, this one");
-    expect(tabs[0]).toContain("ECHO Options");
+    expect(tabs[0]).toContain("Aria Options");
 
     expect((await ask(q, "How many tabs do I have?"))[0]).toMatch(/^You have \d+ tabs open\.$/);
     expect(q.geminiCalls).toHaveLength(0);

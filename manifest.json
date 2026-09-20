@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "ECHO — voice browser",
+  "name": "Aria",
   "version": "0.1.0",
-  "description": "Operate any web page by voice, with the screen off.",
+  "description": "A non-linear voice browser. Operate any web page by voice, with the screen off.",
   "permissions": ["offscreen", "storage", "tts", "tabs", "scripting", "bookmarks"],
   "host_permissions": ["<all_urls>"],
   "options_page": "src/pages/options.html",

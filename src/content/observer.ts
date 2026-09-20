@@ -134,7 +134,7 @@ export function createIndexObserver(
       if (debounceMs < RUNAWAY_DEBOUNCE_MS) {
         debounceMs = RUNAWAY_DEBOUNCE_MS;
         console.warn(
-          "[ECHO] Runaway mutation guard triggered: rebuilds exceeded 5/s for 3 consecutive seconds; debounce increased to 1000 ms"
+          "[Aria] Runaway mutation guard triggered: rebuilds exceeded 5/s for 3 consecutive seconds; debounce increased to 1000 ms"
         );
       }
     }

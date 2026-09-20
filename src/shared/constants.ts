@@ -548,18 +548,30 @@ export const TTS_CHUNK_MAX_CHARS = 200;
 export const GPTZERO_ENDPOINT = "https://api.gptzero.me/v2/predict/text";
 
 /**
- * The detector runs alongside the browser-context gather, ahead of the answer
- * call, so its budget has to fit inside the gap a summary already has. A late
- * verdict is dropped, never waited for: the answer must not be slower because
- * the classifier was (CLAUDE.md 14, "protect the chain").
+ * Matched to `QA_TIMEOUT_MS`, the budget the answer call itself gets.
+ *
+ * This was 2500 ms, copied from `MODEL_TIMEOUT_MS`, and that was wrong. The
+ * resolver's request is a few KB of element names; this one carries thousands
+ * of characters of prose to a classifier. When the budget expired the detector
+ * returned no verdict and the summary played with no warning at all — silently,
+ * and indistinguishably from "this page is fine". A safety feature that fails
+ * closed into silence is worse than one that costs a second.
+ *
+ * The processing ticks play throughout, so the wait is never dead air.
  */
-export const GPTZERO_TIMEOUT_MS = 2500;
+export const GPTZERO_TIMEOUT_MS = 8000;
 
 /**
- * Page text sent for classification. Well inside GPTZero's document limit, and
- * enough of a sample that the verdict is about the page rather than its header.
+ * Page text sent for classification.
+ *
+ * Deliberately far smaller than `PAGE_TEXT_SUMMARY_MAX_CHARS`. The answer call
+ * needs the whole page to answer questions about it; the detector only needs a
+ * representative sample, and roughly ten paragraphs is enough to say whether a
+ * page reads as machine written and to find a machine-written section inside it.
+ * Everything above that is latency the user waits through before hearing the
+ * warning, which was the practical reason the old 20 000 never came back in time.
  */
-export const GPTZERO_MAX_CHARS = 20_000;
+export const GPTZERO_MAX_CHARS = 6_000;
 
 /**
  * Below this, no verdict is produced at all. Detectors are unreliable on short

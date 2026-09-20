@@ -313,7 +313,7 @@ export async function runGlobalIntent(intent: GlobalIntent): Promise<GlobalResul
       }
     }
   } catch (err) {
-    console.warn("[ECHO SW] global command failed:", intent.kind, err instanceof Error ? err.message : err);
+    console.warn("[Aria SW] global command failed:", intent.kind, err instanceof Error ? err.message : err);
     return { ok: false, sentence: "Something went wrong." };
   }
 }

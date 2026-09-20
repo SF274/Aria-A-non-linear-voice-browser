@@ -214,7 +214,7 @@ export class Qa {
   realTranscripts(): string[] {
     return this.swLogs
       .filter((l) => l.includes("real recognizer heard:"))
-      .map((l) => l.replace("[ECHO SW] real recognizer heard: ", ""));
+      .map((l) => l.replace("[Aria SW] real recognizer heard: ", ""));
   }
 
   async isSpeaking(): Promise<boolean> {
@@ -617,7 +617,7 @@ export async function launchQa(opts: LaunchOptions): Promise<Qa> {
   const page = await ctx.newPage();
   const ready = new Promise<void>((res) =>
     page.on("console", (m) => {
-      if (m.text().includes("[ECHO] content script ready")) res();
+      if (m.text().includes("[Aria] content script ready")) res();
     })
   );
   await page.goto(server.url);

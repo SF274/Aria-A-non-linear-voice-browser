@@ -96,7 +96,7 @@ function sendToSW(type: string, payload: unknown): void {
   chrome.runtime.sendMessage(msg).catch((err) => {
     // SPEC §6.1 failure branch: content script cannot reach SW.
     // Try to re-inject using scripting API (handled in the SW on its end).
-    console.warn("[ECHO content] sendMessage failed:", err);
+    console.warn("[Aria content] sendMessage failed:", err);
   });
 }
 

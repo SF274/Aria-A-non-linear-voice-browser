@@ -348,7 +348,7 @@ async function speakElevenLabs(
     const isAbort =
       err instanceof Error && (err.name === "AbortError" || err.message.includes("aborted"));
     if (!isAbort) {
-      console.warn("[ECHO TTS] ElevenLabs fetch failed:", err);
+      console.warn("[Aria TTS] ElevenLabs fetch failed:", err);
     }
     // Re-throw only non-abort errors so caller can fallback
     if (!isAbort) throw err;
@@ -427,7 +427,7 @@ export async function speakText(opts: SpeakOptions): Promise<void> {
     // reasons applied: "the voice sounds wrong" is usually one of these two
     // silently choosing chrome.tts, and they need opposite fixes.
     console.info(
-      `[ECHO TTS] engine=chrome.tts reason=${
+      `[Aria TTS] engine=chrome.tts reason=${
         useLocalTts ? "useLocalTts is true" : "no ElevenLabs API key"
       } rate=${ttsRate}`
     );
@@ -441,12 +441,12 @@ export async function speakText(opts: SpeakOptions): Promise<void> {
     const tabId = await getPlaybackTabId();
 
     if (tabId === null) {
-      console.warn("[ECHO TTS] No active tab for ElevenLabs playback; falling back to chrome.tts");
+      console.warn("[Aria TTS] No active tab for ElevenLabs playback; falling back to chrome.tts");
       speakLocal(text, ttsRate, ttsVoiceName, onDone);
       return;
     }
 
-    console.info(`[ECHO TTS] engine=elevenlabs voice=${elevenLabsVoiceId} tab=${tabId}`);
+    console.info(`[Aria TTS] engine=elevenlabs voice=${elevenLabsVoiceId} tab=${tabId}`);
     // Resolves when playback has finished (the content script answers tts.play on end)
     // or the request was aborted by stopTts().
     await speakElevenLabs(text, elevenLabsApiKey, elevenLabsVoiceId, tabId, pan);
@@ -456,7 +456,7 @@ export async function speakText(opts: SpeakOptions): Promise<void> {
     // clip, so a rejection here can land mid-playback and start chrome.tts on
     // top of audio that is still going. Log the cause; a silent swap between
     // engines is what makes this sound like one voice changing character.
-    console.warn("[ECHO TTS] engine=chrome.tts reason=ElevenLabs failed:", err);
+    console.warn("[Aria TTS] engine=chrome.tts reason=ElevenLabs failed:", err);
     speakLocal(text, ttsRate, ttsVoiceName, onDone);
   }
 }
@@ -538,7 +538,7 @@ export async function speakFromSettings(
     // silent, which made it indistinguishable from the configured engine while
     // sounding nothing like it: no voice selection, no chunking, and a hard
     // coded rate that ignores ttsRate entirely.
-    console.warn("[ECHO TTS] engine=chrome.tts reason=settings/speak threw:", err);
+    console.warn("[Aria TTS] engine=chrome.tts reason=settings/speak threw:", err);
     chrome.tts.speak(text, { rate: DEFAULT_TTS_RATE });
     onDone?.();
   }

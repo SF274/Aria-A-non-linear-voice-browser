@@ -182,7 +182,7 @@ export async function resolveWithGemini(
   } catch (parseError) {
     // Log raw response body length and validation error; NEVER log the body itself
     console.warn(
-      `[ECHO Gemini] Body parse failure. Byte length: ${rawResponseText.length}. Error:`,
+      `[Aria Gemini] Body parse failure. Byte length: ${rawResponseText.length}. Error:`,
       parseError instanceof Error ? parseError.message : String(parseError)
     );
     return {
@@ -198,7 +198,7 @@ export async function resolveWithGemini(
   const schemaResult = ResolverResponseSchema.safeParse(rawParsed);
   if (!schemaResult.success) {
     console.warn(
-      `[ECHO Gemini] Schema validation failure. Byte length: ${rawResponseText.length}. Errors:`,
+      `[Aria Gemini] Schema validation failure. Byte length: ${rawResponseText.length}. Errors:`,
       schemaResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
     );
     return {
@@ -223,13 +223,13 @@ export async function resolveWithGemini(
   let rawActions = modelData.actions;
   if (rawActions.length > MAX_ACTIONS) {
     console.warn(
-      `[ECHO Gemini] Truncating actions from ${rawActions.length} to ${MAX_ACTIONS}`
+      `[Aria Gemini] Truncating actions from ${rawActions.length} to ${MAX_ACTIONS}`
     );
     rawActions = rawActions.slice(0, MAX_ACTIONS);
   }
   if (request.mode === "single" && rawActions.length > 1) {
     console.warn(
-      `[ECHO Gemini] Mode is 'single': truncating actions from ${rawActions.length} to 1`
+      `[Aria Gemini] Mode is 'single': truncating actions from ${rawActions.length} to 1`
     );
     rawActions = rawActions.slice(0, 1);
   }
@@ -243,7 +243,7 @@ export async function resolveWithGemini(
     // Unknown elementId check: must exist in index
     const targetEntry = entryById.get(rawAction.elementId);
     if (!targetEntry) {
-      console.warn(`[ECHO Gemini] Element id not in index: ${rawAction.elementId}`);
+      console.warn(`[Aria Gemini] Element id not in index: ${rawAction.elementId}`);
       return {
         outcome: "MISS",
         actions: [],
@@ -256,7 +256,7 @@ export async function resolveWithGemini(
     // Element must be enabled and not a password element (SPEC §7.6.1 rules 4 & 5)
     if (!targetEntry.enabled || targetEntry.isPassword) {
       console.warn(
-        `[ECHO Gemini] Target element ${rawAction.elementId} is disabled or password`
+        `[Aria Gemini] Target element ${rawAction.elementId} is disabled or password`
       );
       return {
         outcome: "MISS",
@@ -283,7 +283,7 @@ export async function resolveWithGemini(
     // Verb role validity (SPEC §7.6.2)
     if (!isValidVerbForRole(verb, targetEntry)) {
       console.warn(
-        `[ECHO Gemini] Verb "${verb}" invalid for role "${targetEntry.role}"`
+        `[Aria Gemini] Verb "${verb}" invalid for role "${targetEntry.role}"`
       );
       return {
         outcome: "MISS",
@@ -307,7 +307,7 @@ export async function resolveWithGemini(
     const actionParse = ActionSchema.safeParse(actionCandidate);
     if (!actionParse.success) {
       console.warn(
-        `[ECHO Gemini] Action validation failed:`,
+        `[Aria Gemini] Action validation failed:`,
         actionParse.error.message
       );
       return {

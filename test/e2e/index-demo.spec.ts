@@ -42,7 +42,7 @@ test.describe("Demo Page Element Index (SPEC 12, 16 F-04)", () => {
 
       const readinessLogSeen = new Promise<void>((resolveLog) => {
         page.on("console", (msg) => {
-          if (msg.text().includes("[ECHO] content script ready")) resolveLog();
+          if (msg.text().includes("[Aria] content script ready")) resolveLog();
         });
       });
 

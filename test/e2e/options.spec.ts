@@ -32,7 +32,7 @@ test.describe("Options page (SPEC 5.13, 8.6, 10.3, 13.1, 16 F-21)", () => {
       const demoPage = await ctx.newPage();
       const readyPromise = new Promise<void>((resolveReady) => {
         demoPage.on("console", (msg) => {
-          if (msg.text().includes("[ECHO] content script ready")) resolveReady();
+          if (msg.text().includes("[Aria] content script ready")) resolveReady();
         });
       });
 

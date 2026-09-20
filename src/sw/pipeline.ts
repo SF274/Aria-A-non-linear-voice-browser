@@ -125,7 +125,7 @@ async function sendToContent<T>(
     }
     return (response ?? null) as T | null;
   } catch (err) {
-    console.warn("[ECHO SW] content message failed:", type, err instanceof Error ? err.message : err);
+    console.warn("[Aria SW] content message failed:", type, err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -229,7 +229,7 @@ export async function runPipeline(transcript: string): Promise<void> {
   try {
     await run(transcript, controller.signal, alive);
   } catch (err) {
-    console.error("[ECHO SW] pipeline error:", err);
+    console.error("[Aria SW] pipeline error:", err);
     if (alive()) {
       await failWith("Something went wrong.", alive);
     }
@@ -403,7 +403,7 @@ async function run(transcript: string, signal: AbortSignal, alive: () => boolean
     case "ERROR":
     default:
       // The spoken sentence is friendly by design; the real cause goes to the log (SPEC 6.19).
-      console.warn("[ECHO SW] model tier did not resolve:", result.outcome, result.error ?? "");
+      console.warn("[Aria SW] model tier did not resolve:", result.outcome, result.error ?? "");
       return failWith(
         result.spokenMessage ?? formatConfirmation({ kind: "low_confidence" }, verbosity),
         alive
@@ -583,7 +583,7 @@ async function runAnswer(ask: AskRequest, env: RunEnv, opts: AnswerOptions = {})
   if (!alive()) return;
 
   if (!answer.ok) {
-    console.warn("[ECHO SW] page answer failed:", answer.error ?? "");
+    console.warn("[Aria SW] page answer failed:", answer.error ?? "");
     // The warning still goes out. A page the extension could not summarize is
     // not a page the user should be told less about.
     return failWith(say(join(warning, answer.text)), alive);
@@ -744,7 +744,7 @@ async function executeActions(
   // SPEC 7.6.1: one invalid action rejects the whole batch.
   const verdict = validateExecuteRequest(request, index);
   if (!verdict.valid) {
-    console.warn("[ECHO SW] batch rejected:", verdict.reason);
+    console.warn("[Aria SW] batch rejected:", verdict.reason);
     return failWith(VALIDATION_REFUSAL_PHRASE, alive);
   }
 
