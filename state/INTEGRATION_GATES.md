@@ -78,7 +78,16 @@ Run in this order. The first three are the ones most likely to invalidate the pl
 - **Result:** `Key works. Sample scored 100% A.I. (AI_ONLY). You would hear: "Heads up: most of this page reads as A.I. generated text. Watch out for misinformation or incorrect details."` This closes the risk recorded in DEV-011 and N-0xx: the success response shape had never been observed, only a 403 confirming the URL, the method and the `x-api-key` header. `parseVerdict` produced a verdict from a live body, so at least one of its three score fields is present, and `document_classification` arrives and is read.
 - **Blocks:** F-22 — now unblocked
 - **Fallback applied:** none needed
-- **Still unverified:** (1) whether `paragraphs[]` / `sentences[]` are in the response, so it is unknown which of the three extraction tiers HD-14's per-paragraph rule is actually running on — the raw body is logged to the options page console and answers this. (2) The false-positive rate on human prose: the probe sample is machine written by construction, so nothing here tests what an ordinary human-written page scores. Asking for a summary of a human-written page and listening for silence is the quickest check.
+- **Observed response shape** (from the options page console, 2026-09-20). Both of HD-14's paragraph tiers are real, and the field names were guessed correctly:
+  - `documents[0].paragraphs[]` carries `start_sentence_index`, `num_sentences`, `completely_generated_prob` — tier 1 reads exactly these.
+  - `documents[0].sentences[]` carries `generated_prob` and `sentence` — tier 2's fallback grouping is available.
+  - **The document-level score is not where the parser looks first.** There is no `class_probabilities` on the document in the logged portion; the score comes from `completely_generated_prob: 1`, the *second* entry in the fallback chain. The defensive ordering in `parseVerdict` is load-bearing, not decoration.
+  - `document_classification` is present but past the 2000-character log truncation: the status line printed `AI_ONLY`, and `predicted_class: "ai"` alone would have printed `AI`.
+  - **Paragraph scores are calibrated lower than document scores.** The single paragraph came back `0.871` while the document and every sentence were `1.0` / `0.999`. `GPTZERO_PARAGRAPH_THRESHOLD` (0.70) sits below that, but a borderline injected section could land near it.
+  - Sentence `class_probabilities` uses `human` / `ai` / **`paraphrased`** — not `mixed`. `parseVerdict` reads `.mixed`, so AI-paraphrased human text is detected through `document_classification === "MIXED"` rather than through a probability.
+  - The probe sample is a single paragraph of ~700 characters, so `paragraphs[]` had one entry and `extractSections` fell through to sentence runs by design (one paragraph in a long sample reads as unsegmented text). On a real multi-paragraph page, which now reaches the classifier with its breaks intact, tier 1 fires.
+- **False positives:** checked. A summary of a Wikipedia article produced no warning, so ordinary human prose does not trip the rule.
+- **Still unverified:** `paragraphs[]` with more than one entry has not been observed, so tier 1 itself has not been seen to fire on a real page.
 
 ```
 ### IG-nn — <name>
