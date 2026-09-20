@@ -85,6 +85,22 @@ A deviation is **not** permitted for anything on the `CUT` or `FORBIDDEN` list. 
 - **Date:** 2026-09-19
 - **Status:** ACTIVE
 
+### DEV-008 — Page summary and Q&A: what was built and where it departs from SPEC 8.2, 11.4, 11.6, 11.7
+- **SPEC section:** 8.2 (two user parts, a fixed system instruction), 11.4 rule 2 (2500 ms timeout), 11.6 (summary cache and pre-seeded demo summary), 11.7 (local resolver first for every interrogative).
+- **Original requirement:** as listed; HD-09 asks for the feature itself.
+- **Replacement behaviour:**
+  1. **Third prompt part.** The resolver request carries `<browser_context>{now, page, justNavigatedFrom?}</browser_context>` after the command and the elements; the answer request carries `<user_request>`, `<browser_context>` (with the window's tabs) and `<page_text>`. The system instruction stays a compiled constant with no page-derived string and no date (SPEC 8.2's intent). `sanitizeForPrompt` now also strips these three delimiters. Tab titles and hostnames are page-derived and travel only in the context part; a hostname, never a path or query, is sent (SPEC 8.3).
+  2. **Timeout.** The answer call uses `QA_TIMEOUT_MS` = 8000 ms. SPEC 11.4's 2500 ms is written for the resolver, whose request is a few KB; this request carries up to 30 000 characters and returns prose. Still no retry on timeout, still no retry on 429.
+  3. **Local resolver first only for short questions.** SPEC 11.7 offers every interrogative to the local resolver before Q&A. "Where is the submit button" would then click Submit. A question of more than three words goes straight to Q&A; up to three ("what's new", "how it works") is tried locally first, so a link with that name still works. The rule leans toward the answer because a wrong action is worse than a wrong answer (SPEC 7.4).
+  4. **Answered without the model:** the date, the time, "how many tabs", "what tabs are open" and "what page am I on" are answered from `chrome.tabs` and the clock (`src/sw/commands/local-answers.ts`). They work offline, on pages the extension cannot read, and cannot be mis-paraphrased.
+  5. **Compound commands** ("click the first link and tell me where it leads", "switch to the airport tab and summarize it"): the action runs through the normal path, then the question is answered about the page it led to. This has no SPEC row; it is a composition of two SPEC paths.
+  6. **"Switch to Wikipedia" / "switch to the airport page"** (no word "tab") is a tab switch only when an open tab other than the current one matches; otherwise it is a page command.
+  7. **Summary cache and the pre-seeded demo summary (SPEC 11.6 steps 1 and 5, F-13's offline and eviction criteria) are not built.** T1-06 is therefore `IN_PROGRESS`, not `DONE`.
+  8. A click whose navigation closes the message channel before the executor replies is treated as success when the tab is loading or its URL changed, instead of "I can't read this page."
+- **Consequence:** F-14's "cannot emit an Action" criterion is a test (`qa-inert.spec.ts`). Live-model behaviour (word limits, "not on the page" answers, the improved resolver prompt) is unmeasured; the tests stub Gemini.
+- **Date:** 2026-09-19
+- **Status:** ACTIVE
+
 ## Superseded
 
 *(none yet)*

@@ -82,7 +82,6 @@ describe("matchGlobalIntent (SPEC 6.18: fixed intent table, matched before eleme
     "forward",
     "next", // a wizard's Next button
     "go back to checkout",
-    "switch to checkout", // not a tab reference
     "go to checkout",
     "look up", // nothing to look up
     "book the 9:40 flight",
@@ -92,6 +91,23 @@ describe("matchGlobalIntent (SPEC 6.18: fixed intent table, matched before eleme
 
   it.each(negatives)("%j is not a global command", (transcript) => {
     expect(matchGlobalIntent(transcript)).toBeNull();
+  });
+
+  // No "tab" in the phrase: the router proposes a switch, and the pipeline only
+  // takes it when an open tab really matches (otherwise it is a page command,
+  // e.g. a "Switch to checkout" button). E2E suite G covers both outcomes.
+  it.each([
+    ["switch to checkout", "checkout"],
+    ["Switch to Wikipedia.", "Wikipedia"],
+    ["switch to the airport page", "airport"],
+    ["switch back to the news site", "news"],
+  ])("%j is a soft tab switch", (transcript, query) => {
+    expect(matchGlobalIntent(transcript)).toEqual({ kind: "switch_tab", query, soft: true });
+  });
+
+  it("an explicit 'tab' is a hard switch, never soft", () => {
+    expect(matchGlobalIntent("switch to the airport tab")).toEqual({ kind: "switch_tab", query: "airport" });
+    expect(matchGlobalIntent("switch to next tab")).toEqual({ kind: "cycle_tab", direction: 1 });
   });
 });
 

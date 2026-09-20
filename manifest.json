@@ -5,6 +5,7 @@
   "description": "Operate any web page by voice, with the screen off.",
   "permissions": ["offscreen", "storage", "tts", "tabs", "scripting", "bookmarks"],
   "host_permissions": ["<all_urls>"],
+  "options_page": "src/pages/options.html",
   "background": {
     "service_worker": "src/sw/index.js"
   },

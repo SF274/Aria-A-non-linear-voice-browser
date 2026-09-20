@@ -13,6 +13,7 @@ const userDataDir = resolve(
 
 test.describe("Options page (SPEC 5.13, 8.6, 10.3, 13.1, 16 F-21)", () => {
   test("persists API key across restarts, never renders it into other pages' DOM, and provides runnable gate buttons", async () => {
+    test.setTimeout(120_000); // IG-03 now waits for ten real chunks (about 14 s)
     const server = await startDemoServer(0);
 
     const ctx = await chromium.launchPersistentContext(userDataDir, {
@@ -157,13 +158,15 @@ test.describe("Options page (SPEC 5.13, 8.6, 10.3, 13.1, 16 F-21)", () => {
         })
         .toBe(true);
 
+      // IG-03 really waits for ten queued chunks to finish (about 14 s even at top rate
+      // and volume 0, measured on the dev machine); it used to report PASS after 600 ms.
       await expect
         .poll(
           () =>
             consoleLogs.some((l) =>
               l.includes("### IG-03 — chrome.tts speaks a chunked 60 s passage to completion")
             ),
-          { timeout: 6000 }
+          { timeout: 40_000 }
         )
         .toBe(true);
 

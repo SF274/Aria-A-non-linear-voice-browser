@@ -4,6 +4,10 @@
  *   transcript → normalize → page index → tier one (local) → tier two (Gemini)
  *              → confidence gate → validation → exec.run → spoken confirmation
  *
+ * Two things branch off before the element resolver: browser-level commands (SPEC
+ * 6.18) and questions about the page (SPEC 11.6, 11.7), which are answered by a
+ * separate plain-text call that can only ever be spoken (SPEC 8.5).
+ *
  * Owned by the service worker (SPEC 4.6: "Choosing the target element" and
  * "Transcript interpretation" never belong to the content script or the
  * model). Every path ends in a spoken sentence and a return to IDLE, or in
@@ -12,6 +16,9 @@
 
 import {
   CLARIFY_TIMEOUT_MS,
+  NAVIGATION_WAIT_MS,
+  PAGE_TEXT_QA_MAX_CHARS,
+  PAGE_TEXT_SUMMARY_MAX_CHARS,
   PROCESSING_TICK_FIRST_MS,
   PROCESSING_TICK_INTERVAL_MS,
   PROCESSING_TICK_MAX,
@@ -34,8 +41,12 @@ import {
 } from "../shared/contracts";
 import { normalizeTranscript, type NormalizedTranscript } from "../shared/normalize";
 import { rememberTab, resolveTabId } from "./active-tab";
-import { matchGlobalIntent, runGlobalIntent, type GlobalIntent } from "./commands/browser";
+import { type AskRequest, isShortQuestion, matchAsk } from "./commands/ask";
+import { matchGlobalIntent, matchTab, runGlobalIntent, scoreTab, type GlobalIntent } from "./commands/browser";
+import { answerFromContext } from "./commands/local-answers";
 import { VALIDATION_REFUSAL_PHRASE, validateExecuteRequest } from "./execute/validate";
+import { gatherBrowserContext } from "./gemini/context";
+import { answerAboutPage } from "./gemini/qa";
 import { resolveWithGemini } from "./gemini/resolver";
 import { toPromptElements } from "./gemini/prompts";
 import { formatClarifyingQuestion, inDocumentOrder, resolveClarificationReply } from "./resolver/clarify";
@@ -46,6 +57,21 @@ import { speakFromSettings, formatConfirmation, type ConfirmationSituation } fro
 const CONTENT_MESSAGE_TIMEOUT_MS = 500;
 const EXEC_TIMEOUT_MS = 15_000;
 const MAX_SPOKEN_WAIT_MS = 30_000;
+const PAGE_TEXT_TIMEOUT_MS = 3000;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** What one run needs to speak, answer and stop when the user interrupts. */
+interface RunEnv {
+  settings: Partial<Settings>;
+  verbosity: Verbosity;
+  audioEnabled: boolean;
+  signal: AbortSignal;
+  alive: () => boolean;
+}
+
+/** "Click the first link and tell me ...": the question waits for the clarified action. */
+let clarifyFollowUp: AskRequest | null = null;
 
 /** Roles a bare "name" command clicks; everything else is focused (SPEC 7.2.2). */
 const CLICK_ROLES = new Set(["button", "link", "checkbox", "radio", "tab", "menuitem", "option"]);
@@ -203,57 +229,100 @@ async function run(transcript: string, signal: AbortSignal, alive: () => boolean
   const settings = await loadSettings();
   const verbosity: Verbosity = settings.verbosity ?? "fast";
   const audioEnabled = settings.audioEnabled !== false;
+  const env: RunEnv = { settings, verbosity, audioEnabled, signal, alive };
 
   const raw = transcript.slice(0, TRANSCRIPT_MAX_CHARS);
 
   // ---- global commands (SPEC 6.18): matched before any element resolution, never
   // sent to the model, and independent of the page (a new tab or a search must
   // work on a page the content script cannot read).
-  const intent = matchGlobalIntent(raw);
+  const intent = await keepIfTabExists(matchGlobalIntent(raw));
   if (intent) return runGlobal(intent, alive);
 
+  const session = await getSession();
+  const pending = session.clarification;
+  const clarifying = pending !== null && Date.now() <= pending.expiresAt;
+
+  // ---- questions about the page (SPEC 11.6, 11.7) --------------------------------
+  // A summary, the date or the tabs never need the element index. "Click X and tell
+  // me ..." runs the action first and answers about what it led to. While a
+  // clarification is open, other questions are treated as the reply.
+  let command = raw;
+  let followUp: AskRequest | null = null;
+  let questionOnly: AskRequest | null = null;
+  const route = matchAsk(raw);
+  if (route && route.action === null) {
+    if (route.ask.kind === "summary" || route.ask.contextOnly) return runAnswer(route.ask, env);
+    if (!clarifying) questionOnly = route.ask;
+  } else if (route && route.action !== null && !clarifying) {
+    const actionIntent = await keepIfTabExists(matchGlobalIntent(route.action));
+    if (actionIntent === null) {
+      command = route.action;
+      followUp = route.ask;
+    } else if (actionIntent.kind === "switch_tab" || actionIntent.kind === "cycle_tab") {
+      return runGlobal(actionIntent, alive, { ask: route.ask, env });
+    }
+    // Any other browser command ("search for ... and tell me ...") stays one whole command.
+  }
+
   const tabId = await resolveTabId();
-  if (tabId === null) return failWith("I can't read this page.", alive);
+  if (tabId === null) {
+    if (questionOnly) return runAnswer(questionOnly, env);
+    return failWith("I can't read this page.", alive);
+  }
 
   const index = await fetchIndex(tabId);
   if (!alive()) return;
-  if (!index) return failWith("I can't read this page.", alive);
-  if (index.entries.length === 0) {
-    return failWith("I don't see anything to interact with on this page.", alive);
+  if (!index || index.entries.length === 0) {
+    // A question needs the page's text, not its buttons.
+    if (questionOnly) return runAnswer(questionOnly, env);
+    return failWith(
+      index ? "I don't see anything to interact with on this page." : "I can't read this page.",
+      alive
+    );
   }
 
-  const session = await getSession();
-
   // ---- clarification reply (SPEC 7.5.2) ------------------------------------
-  const pinned = session.clarification;
-  if (pinned) {
-    if (pinned.buildId !== index.buildId || Date.now() > pinned.expiresAt) {
+  if (pending) {
+    if (pending.buildId !== index.buildId || Date.now() > pending.expiresAt) {
       // Stale candidates are worse than a lost turn: treat the reply as a fresh command.
+      clarifyFollowUp = null;
       await transitionTo("RESOLVING", { clarification: null });
       await sendToContent(tabId, "ui.highlight", { ids: [], durationMs: 0 }, CONTENT_MESSAGE_TIMEOUT_MS);
     } else {
-      return handleClarificationReply(raw, pinned, index, tabId, verbosity, alive);
+      return handleClarificationReply(raw, pending, index, tabId, env);
     }
   }
 
-  const normalized = normalizeTranscript(raw);
-  const mode = detectMode(raw, normalized);
+  const normalized = normalizeTranscript(command);
+  const mode = detectMode(command, normalized);
 
   // ---- tier one (SPEC 7.2), only for single commands ------------------------
-  if (mode === "single") {
+  // A question is offered to the local resolver only when it is short enough to be
+  // an element's name ("what's new"). "Where is the submit button" must be answered,
+  // not clicked: a wrong action is worse than a wrong answer (SPEC 7.4; DEV-008).
+  const tryLocal = mode === "single" && (questionOnly === null || isShortQuestion(questionOnly.question));
+  if (tryLocal) {
     const local = resolveLocal(normalized, index);
     if (local.outcome === "CONFIDENT" && local.action) {
-      return executeActions([local.action], index, tabId, verbosity, alive, audioEnabled);
+      return executeActions([local.action], index, tabId, env, followUp);
     }
-    if (local.outcome === "AMBIGUOUS" && local.candidates) {
+    if (questionOnly === null && local.outcome === "AMBIGUOUS" && local.candidates) {
       // SPEC 7.4: an AMBIGUOUS local result is clarified, not sent to the model.
-      return beginClarification(local.candidates, index, tabId, alive);
+      return beginClarification(local.candidates, index, tabId, alive, undefined, followUp);
     }
   }
+
+  // A question that no element answers goes to the page-text call, never the resolver.
+  if (questionOnly) return runAnswer(questionOnly, env);
 
   // ---- tier two (SPEC 7.3, 11) ----------------------------------------------
   if (!alive()) return;
   await transitionTo("MODEL_RESOLVING");
+  // Date, time and the page's title travel in their own prompt part. No address and no
+  // tab list: a click does not need to know what else is open (SPEC 8.3).
+  const context = await gatherBrowserContext(tabId, { scope: "resolver" });
+  if (!alive()) return;
 
   const stopTicks = startProcessingTicks(tabId, audioEnabled);
   let result: Awaited<ReturnType<typeof resolveWithGemini>>;
@@ -270,6 +339,7 @@ async function run(transcript: string, signal: AbortSignal, alive: () => boolean
         apiKey: settings.geminiApiKey ?? null,
         model: settings.geminiModel,
         signal,
+        context,
       }
     );
   } finally {
@@ -280,14 +350,14 @@ async function run(transcript: string, signal: AbortSignal, alive: () => boolean
 
   switch (result.outcome) {
     case "CONFIDENT":
-      return executeActions(result.actions, index, tabId, verbosity, alive, audioEnabled);
+      return executeActions(result.actions, index, tabId, env, followUp);
 
     case "AMBIGUOUS": {
       const candidates = (result.ambiguousWith ?? [])
         .map((id) => index.entries.find((e) => e.id === id))
         .filter((e): e is ElementIndexEntry => e !== undefined && e.enabled && !e.isPassword);
       if (candidates.length >= 2 && candidates.length <= 4) {
-        return beginClarification(candidates, index, tabId, alive, result.clarifyingQuestion);
+        return beginClarification(candidates, index, tabId, alive, result.clarifyingQuestion, followUp);
       }
       return failWith(result.spokenMessage ?? "I'm not sure which one you mean.", alive);
     }
@@ -313,7 +383,11 @@ async function run(transcript: string, signal: AbortSignal, alive: () => boolean
  * ERROR → speak the failure → IDLE. Same shape as a page action, so the
  * interruption and highlight-clearing rules apply unchanged.
  */
-async function runGlobal(intent: GlobalIntent, alive: () => boolean): Promise<void> {
+async function runGlobal(
+  intent: GlobalIntent,
+  alive: () => boolean,
+  followUp?: { ask: AskRequest; env: RunEnv }
+): Promise<void> {
   if (!alive()) return;
 
   // A pending clarification is abandoned by an explicit browser command; its
@@ -331,11 +405,220 @@ async function runGlobal(intent: GlobalIntent, alive: () => boolean): Promise<vo
   if (!alive()) return;
   if (!result.ok) return failWith(result.sentence, alive);
 
+  // "Switch to the airport tab and summarize it": say where we went, then answer about it.
+  if (followUp) return runAnswer(followUp.ask, followUp.env, { prefix: result.sentence });
+
   await transitionTo("CONFIRMING");
   await speakAndWait(result.sentence);
   if (alive() && (await getSession()).state === "CONFIRMING") {
     await transitionTo("IDLE", { clarification: null });
   }
+}
+
+/**
+ * "Switch to Wikipedia" has no "tab" in it, so it is a tab switch only when an open
+ * tab (other than the one the user is on) really matches. Otherwise it is a page
+ * command, e.g. a "Switch to grid view" button.
+ */
+async function keepIfTabExists(intent: GlobalIntent | null): Promise<GlobalIntent | null> {
+  if (!intent || intent.kind !== "switch_tab" || !intent.soft) return intent;
+  try {
+    const [tabs, currentId] = await Promise.all([chrome.tabs.query({}), resolveTabId()]);
+    return matchTab(intent.query, tabs.filter((t) => t.id !== currentId)) ? intent : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Answering questions (SPEC 11.6, 11.7, F-13, F-14)
+// ---------------------------------------------------------------------------
+
+interface AnswerOptions {
+  /** Spoken first, e.g. "Switching to Airport." or "Clicking Home.". */
+  prefix?: string;
+  /** The tab the user is in; defaults to the remembered one. */
+  tabId?: number;
+  /** Title of the page the user just left, when a click brought them here. */
+  justNavigatedFrom?: string;
+}
+
+/** The tab a question names ("the airport page"), else the one the user is on. Same window only. */
+async function pickTab(query: string, currentId: number): Promise<number> {
+  try {
+    const { windowId } = await chrome.tabs.get(currentId);
+    const tabs = await chrome.tabs.query({ windowId });
+    const found = matchTab(query, tabs);
+    if (!found || typeof found.tab.id !== "number") return currentId;
+    // The page the user is already on wins a near tie: "the search page" is probably this one.
+    const current = tabs.find((t) => t.id === currentId);
+    if (current && scoreTab(query, current) >= found.score - 0.05) return currentId;
+    return found.tab.id;
+  } catch {
+    return currentId;
+  }
+}
+
+async function fetchPageText(tabId: number, maxChars: number): Promise<{ text: string } | null> {
+  // A tab that just finished loading may not have its content script yet: one retry.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const page = await sendToContent<{ text?: unknown }>(tabId, "page.text", { maxChars }, PAGE_TEXT_TIMEOUT_MS);
+    if (page && typeof page.text === "string") return { text: page.text };
+    if (attempt === 0) await sleep(300);
+  }
+  return null;
+}
+
+/**
+ * MODEL_RESOLVING → CONFIRMING → speak → IDLE. The date, the time and the open tabs are
+ * answered here without a network call. Everything else is one plain-text Gemini call
+ * whose reply is only ever spoken (SPEC 8.5).
+ */
+async function runAnswer(ask: AskRequest, env: RunEnv, opts: AnswerOptions = {}): Promise<void> {
+  const { alive, settings, verbosity, audioEnabled, signal } = env;
+  if (!alive()) return;
+  const say = (sentence: string): string => (opts.prefix ? `${opts.prefix} ${sentence}` : sentence);
+
+  const frontId = opts.tabId ?? (await resolveTabId());
+  if (frontId === null) return failWith(say("I can't read this page."), alive);
+
+  // A pending clarification is abandoned by a question; its highlights live in this tab.
+  if ((await getSession()).clarification) {
+    await sendToContent(frontId, "ui.highlight", { ids: [], durationMs: 0 }, CONTENT_MESSAGE_TIMEOUT_MS);
+  }
+  clarifyFollowUp = null;
+  await transitionTo("MODEL_RESOLVING", { clarification: null });
+
+  // ---- answered locally: the date, the time, the tabs -----------------------------
+  if (ask.contextOnly) {
+    const context = await gatherBrowserContext(frontId);
+    if (!alive()) return;
+    return speakAnswer(say(answerFromContext(ask.question, context)), alive);
+  }
+
+  const targetId = ask.tabQuery ? await pickTab(ask.tabQuery, frontId) : frontId;
+
+  const page = await fetchPageText(
+    targetId,
+    ask.kind === "summary" ? PAGE_TEXT_SUMMARY_MAX_CHARS : PAGE_TEXT_QA_MAX_CHARS
+  );
+  if (!alive()) return;
+  if (!page) return failWith(say("I can't read this page."), alive);
+  if (!page.text.trim()) return failWith(say("This page has no text I can read."), alive);
+
+  const context = await gatherBrowserContext(targetId, { justNavigatedFrom: opts.justNavigatedFrom });
+  if (!alive()) return;
+
+  const stopTicks = startProcessingTicks(frontId, audioEnabled);
+  let answer: Awaited<ReturnType<typeof answerAboutPage>>;
+  try {
+    answer = await answerAboutPage(
+      { kind: ask.kind, question: ask.question, pageText: page.text, context, verbosity },
+      { apiKey: settings.geminiApiKey ?? null, model: settings.geminiModel, signal }
+    );
+  } finally {
+    // Tones and speech never overlap (SPEC 9.1).
+    stopTicks();
+  }
+  if (!alive()) return;
+
+  if (!answer.ok) {
+    console.warn("[ECHO SW] page answer failed:", answer.error ?? "");
+    return failWith(say(answer.text), alive);
+  }
+  return speakAnswer(say(answer.text), alive);
+}
+
+async function speakAnswer(sentence: string, alive: () => boolean): Promise<void> {
+  await transitionTo("CONFIRMING");
+  await speakAndWait(sentence);
+  if (alive() && (await getSession()).state === "CONFIRMING") {
+    await transitionTo("IDLE", { clarification: null });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// After a click: did it navigate, and where did the user land?
+// ---------------------------------------------------------------------------
+
+interface TabSnapshot {
+  url: string | undefined;
+  title: string | undefined;
+  windowId: number | undefined;
+  tabIds: number[];
+}
+
+async function snapshotTab(tabId: number): Promise<TabSnapshot> {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const siblings = await chrome.tabs.query({ windowId: tab.windowId });
+    return {
+      url: tab.url,
+      title: tab.title,
+      windowId: tab.windowId,
+      tabIds: siblings.map((t) => t.id).filter((id): id is number => typeof id === "number"),
+    };
+  } catch {
+    return { url: undefined, title: undefined, windowId: undefined, tabIds: [] };
+  }
+}
+
+/**
+ * A click on a link can tear the page down before the content script's reply is
+ * delivered, so a missing reply is not a failure if the tab is on its way elsewhere.
+ */
+async function navigatedAway(tabId: number, beforeUrl: string | undefined): Promise<boolean> {
+  for (let i = 0; i < 8; i++) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.status === "loading" || tab.pendingUrl || (beforeUrl && tab.url && tab.url !== beforeUrl)) {
+        return true;
+      }
+    } catch {
+      return false;
+    }
+    await sleep(100);
+  }
+  return false;
+}
+
+/**
+ * Wait for the page a click led to. The click may load a new page in this tab, open
+ * a new tab, or change nothing visible (an in-page toggle); the last is detected by
+ * nothing happening for a moment and answers about the page as it is.
+ */
+async function settleAfterAction(
+  tabId: number,
+  before: TabSnapshot
+): Promise<{ tabId: number; navigated: boolean }> {
+  const startedAt = Date.now();
+  let target = tabId;
+  let navigated = false;
+
+  while (Date.now() - startedAt < NAVIGATION_WAIT_MS) {
+    try {
+      if (typeof before.windowId === "number") {
+        const siblings = await chrome.tabs.query({ windowId: before.windowId });
+        const opened = siblings.find((t) => typeof t.id === "number" && !before.tabIds.includes(t.id));
+        if (opened && typeof opened.id === "number") {
+          target = opened.id;
+          navigated = true;
+        }
+      }
+      const tab = await chrome.tabs.get(target);
+      const moved = target !== tabId || tab.status === "loading" || (before.url && tab.url !== before.url);
+      if (moved) navigated = true;
+      if (navigated && tab.status === "complete" && (tab.url || tab.pendingUrl)) break;
+    } catch {
+      break;
+    }
+    if (!navigated && Date.now() - startedAt > 1200) break;
+    await sleep(150);
+  }
+
+  if (navigated) await sleep(300); // let the new page's content script start (document_idle)
+  if (target !== tabId) await rememberTab(target);
+  return { tabId: target, navigated };
 }
 
 // ---------------------------------------------------------------------------
@@ -377,10 +660,10 @@ async function executeActions(
   actions: Action[],
   index: ElementIndex,
   tabId: number,
-  verbosity: Verbosity,
-  alive: () => boolean,
-  audioEnabled = true
+  env: RunEnv,
+  followUp: AskRequest | null = null
 ): Promise<void> {
+  const { verbosity, alive, audioEnabled } = env;
   const request: ExecuteRequest = {
     buildId: index.buildId,
     actions,
@@ -401,7 +684,24 @@ async function executeActions(
   await transitionTo("EXECUTING", { clarification: null });
   await sendToContent(tabId, "ui.highlight", { ids: [], durationMs: 0 }, CONTENT_MESSAGE_TIMEOUT_MS);
 
-  const result = await sendToContent<ExecuteResult>(tabId, "exec.run", request, EXEC_TIMEOUT_MS);
+  const before = await snapshotTab(tabId);
+  let result = await sendToContent<ExecuteResult>(tabId, "exec.run", request, EXEC_TIMEOUT_MS);
+  if (!alive()) return;
+  if (!result && (await navigatedAway(tabId, before.url))) {
+    // The click worked and the page is leaving: the reply went down with it.
+    result = {
+      ok: true,
+      completed: actions.length,
+      failedAtIndex: null,
+      results: actions.map((a, i) => ({
+        index: i,
+        verb: a.verb,
+        elementId: a.elementId,
+        resolvedName: nameOf(index, a.elementId) || null,
+        status: "ok" as const,
+      })),
+    };
+  }
   if (!alive()) return;
   if (!result) return failWith("I can't read this page.", alive);
 
@@ -415,6 +715,18 @@ async function executeActions(
   if (!result.ok) {
     // ACTION_FAILED → ERROR → speak the partial-failure sentence → IDLE (SPEC 4.5, 6.12).
     return failWith(sentence, alive);
+  }
+
+  // "Click the first link and tell me where it leads": confirm the click in the same
+  // breath as the answer, about the page it actually led to.
+  if (followUp) {
+    const landed = await settleAfterAction(tabId, before);
+    if (!alive()) return;
+    return runAnswer(followUp, env, {
+      prefix: sentence,
+      tabId: landed.tabId,
+      justNavigatedFrom: landed.navigated ? before.title : undefined,
+    });
   }
 
   await transitionTo("CONFIRMING");
@@ -473,9 +785,11 @@ async function beginClarification(
   index: ElementIndex,
   tabId: number,
   alive: () => boolean,
-  modelQuestion?: string
+  modelQuestion?: string,
+  followUp: AskRequest | null = null
 ): Promise<void> {
   if (!alive()) return;
+  clarifyFollowUp = followUp;
   const ordered = inDocumentOrder(candidates);
 
   // The model's question is used only if it is short enough (SPEC 5.5: nine words).
@@ -510,8 +824,7 @@ async function handleClarificationReply(
   pinned: ClarificationState,
   index: ElementIndex,
   tabId: number,
-  verbosity: Verbosity,
-  alive: () => boolean
+  env: RunEnv
 ): Promise<void> {
   const candidates = pinned.candidateIds
     .map((id) => index.entries.find((e) => e.id === id))
@@ -519,18 +832,21 @@ async function handleClarificationReply(
 
   const reply = resolveClarificationReply(raw, candidates);
   if (reply.kind === "resolved" && reply.entry.enabled) {
+    const followUp = clarifyFollowUp;
+    clarifyFollowUp = null;
     return executeActions(
       [{ verb: defaultVerb(reply.entry), elementId: reply.entry.id }],
       index,
       tabId,
-      verbosity,
-      alive
+      env,
+      followUp
     );
   }
 
   // SPEC 7.5.2 step 5: unresolved -> ask once more with "Say " prefixed to the
   // first option, and never a third time.
   if (pinned.question.startsWith("Say ")) {
+    clarifyFollowUp = null;
     await transitionTo("IDLE", { clarification: null });
     void speakFromSettings("I'm not sure which one you mean.");
     return;
@@ -549,6 +865,7 @@ async function handleClarificationReply(
 
 onTransition((from, to) => {
   if (to !== "IDLE" || from === "IDLE") return;
+  clarifyFollowUp = null;
   void (async () => {
     const tabId = await resolveTabId();
     if (tabId !== null) {

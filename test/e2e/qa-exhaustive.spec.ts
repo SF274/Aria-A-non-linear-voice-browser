@@ -943,3 +943,302 @@ test.describe("Suite F: global commands (tabs, search, save)", () => {
     expect((await q.spoken()).map((x) => x.text)).toEqual(["Search flights."]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Suite G: questions about the page, the date and the tabs — SPEC 11.6, 11.7,
+// F-13, F-14. Transcripts go through the real service-worker pipeline against the
+// real demo page; only Gemini is stubbed, and every request it receives is checked.
+// ---------------------------------------------------------------------------
+
+test.describe("Suite G: page questions, date/time, tabs", () => {
+  const ANSWER = "This is a flight booking page. You can search for flights and book one.";
+
+  interface Body {
+    contents: Array<{ parts: Array<{ text: string }> }>;
+    generationConfig: { responseMimeType: string; responseSchema?: unknown };
+    systemInstruction: { parts: Array<{ text: string }> };
+  }
+  const bodyOf = (call: GeminiCall): Body => call.body as unknown as Body;
+  const isResolver = (call: GeminiCall): boolean => bodyOf(call).generationConfig.responseMimeType === "application/json";
+  const answerCalls = (q: Qa): GeminiCall[] => q.geminiCalls.filter((c) => !isResolver(c));
+  type Settings = Parameters<typeof launchQa>[0]["settings"];
+
+  async function setup(settings: Settings = API_KEY): Promise<Qa> {
+    const q = (qa = await launchQa({ audio: "silence.wav", settings }));
+    await q.routeGemini(async (route, call) => {
+      if (isResolver(call)) {
+        // A resolver call: the only command here that needs one clicks the "destination" link.
+        const els = promptElements(call);
+        await fulfillGemini(route, { actions: [{ verb: "click", elementId: idOf(els, /destination/i) }], confidence: 0.95 });
+        return;
+      }
+      const pageText = bodyOf(call).contents[0].parts[2].text;
+      const text = pageText.includes("runway lights")
+        ? "It leads to a page about runway lights."
+        : pageText.includes("Airport history")
+          ? "This tab is about the history of airports."
+          : pageText.includes("Fare panel is now open")
+            ? "The fare panel is open."
+            : ANSWER;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }),
+      });
+    });
+    return q;
+  }
+
+  /** Inject one transcript as if spoken on the front tab, and return everything spoken for it. */
+  async function ask(q: Qa, transcript: string): Promise<string[]> {
+    await q.sw.evaluate(async () => {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      await chrome.storage.session.set({ activeTab: tab?.id });
+    });
+    const before = (await q.spoken()).length;
+    const mark = (await q.transitions()).length;
+    await q.deliverTranscript("silence.wav", transcript);
+    await q.waitForIdleAfter(mark, 20_000);
+    return (await q.spoken()).slice(before).map((x) => x.text);
+  }
+
+  /** A second tab in the same window, titled and filled as a different page. */
+  async function openAirportTab(q: Qa): Promise<void> {
+    const other = await q.ctx.newPage();
+    await other.goto(q.page.url());
+    await other.evaluate(() => {
+      document.title = "Airport - Wikipedia";
+      document.body.innerHTML = "<main><h1>Airport</h1><p>Airport history: early airfields were grass strips.</p></main>";
+    });
+    await q.page.bringToFront();
+  }
+
+  /** A link to a stubbed page about runway lights, first in the page's reading order. */
+  async function addDestinationLink(q: Qa, target?: string): Promise<void> {
+    await q.ctx.route("**/qa-dest", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: "<html><head><title>Destination Page</title></head><body><main><h1>Destination</h1><p>You have reached the page about runway lights.</p></main></body></html>",
+      })
+    );
+    await q.page.evaluate((t) => {
+      const a = document.createElement("a");
+      a.href = "/qa-dest";
+      if (t) a.target = t;
+      a.textContent = "Destination link";
+      document.body.prepend(a);
+    }, target ?? null);
+    await sleep(500);
+  }
+
+  const frontTitle = (q: Qa) =>
+    q.sw.evaluate(async () => (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0].title);
+
+  test("G1: 'what's on this page' reads the page and speaks the model's answer, nothing else", async () => {
+    const q = await setup();
+
+    expect(await ask(q, "What's on this page?")).toEqual([ANSWER]);
+
+    const calls = answerCalls(q);
+    expect(calls).toHaveLength(1);
+    const body = bodyOf(calls[0]);
+    // Plain text, three separate parts, page text from the real page, and the date.
+    expect(body.generationConfig.responseMimeType).toBe("text/plain");
+    expect(body.generationConfig.responseSchema).toBeUndefined();
+    const parts = body.contents[0].parts.map((p) => p.text);
+    expect(parts[0]).toBe("<user_request>What's on this page</user_request>");
+    expect(parts[1]).toMatch(/^<browser_context>.*"now":".*20\d\d.*".*<\/browser_context>$/);
+    expect(parts[1]).toContain('"title":"Northbound Air"');
+    expect(parts[1]).toContain("127.0.0.1");
+    expect(parts[1]).not.toContain("http");
+    expect(parts[2]).toContain("Northbound Air Flight Booking");
+    // The system instruction is the fixed constant: no page text, no date.
+    expect(body.systemInstruction.parts[0].text).not.toContain("Northbound");
+    // Inert: the answer never went near the executor.
+    const states = (await q.transitions()).map((t) => t.state);
+    expect(states).toContain("MODEL_RESOLVING");
+    expect(states).not.toContain("EXECUTING");
+  });
+
+  test("G2: a question is answered, never clicked, even when it names a button", async () => {
+    const q = await setup();
+    await q.page.evaluate(() => {
+      const b = document.createElement("button");
+      b.id = "qa-trap";
+      b.textContent = "Where is the submit button";
+      b.addEventListener("click", () => ((window as unknown as { __trapClicked: boolean }).__trapClicked = true));
+      document.body.prepend(b);
+    });
+    await sleep(500);
+
+    expect(await ask(q, "Where is the submit button?")).toEqual([ANSWER]);
+    expect(await q.page.evaluate(() => (window as unknown as { __trapClicked?: boolean }).__trapClicked)).toBeUndefined();
+    expect(answerCalls(q)).toHaveLength(1);
+  });
+
+  test("G3: the time, the date and the tabs are answered locally, with no key and no network", async () => {
+    const q = await setup({}); // no API key at all
+
+    const time = await ask(q, "What time is it?");
+    expect(time[0]).toMatch(/^It's \d{1,2}:\d{2}\s?[AP]M\.$/);
+    const date = await ask(q, "What's the date?");
+    expect(date[0]).toMatch(/^Today is \w+day, \w+ \d{1,2}, 20\d\d\.$/);
+
+    const tabs = await ask(q, "What tabs are open?");
+    expect(tabs).toHaveLength(1);
+    // The harness window holds the demo page, the options page and a blank tab.
+    expect(tabs[0]).toMatch(/^You have \d+ tabs open\. 1, /);
+    expect(tabs[0]).toContain("Northbound Air, this one");
+    expect(tabs[0]).toContain("ECHO — Options");
+
+    expect((await ask(q, "How many tabs do I have?"))[0]).toMatch(/^You have \d+ tabs open\.$/);
+    expect(q.geminiCalls).toHaveLength(0);
+    expect((await q.fetchLog()).filter((f) => f.url.includes("googleapis"))).toHaveLength(0);
+  });
+
+  test("G4: 'summarize the airport tab' reads the other tab in this window, without switching to it", async () => {
+    const q = await setup();
+    await openAirportTab(q);
+
+    expect(await ask(q, "Summarize the airport tab.")).toEqual(["This tab is about the history of airports."]);
+
+    const parts = bodyOf(answerCalls(q)[0]).contents[0].parts.map((p) => p.text);
+    expect(parts[2]).toContain("Airport history");
+    expect(parts[1]).toContain('"page":{"title":"Airport - Wikipedia"');
+    expect(parts[1]).toContain("Northbound Air"); // and it knows about the other tab too
+    // We read the tab; we did not move the user.
+    expect(await frontTitle(q)).toBe("Northbound Air");
+  });
+
+  test("G5: 'switch to the airport tab and summarize it' switches, then answers about it", async () => {
+    const q = await setup();
+    await openAirportTab(q);
+
+    const spoken = await ask(q, "Switch to the airport tab and summarize it.");
+    expect(spoken).toEqual(["Switching to Airport - Wikipedia. This tab is about the history of airports."]);
+    expect(await frontTitle(q)).toBe("Airport - Wikipedia");
+  });
+
+  test("G6: 'switch to Wikipedia' (no 'tab') is a tab switch when a tab matches, and a page command when none does", async () => {
+    const q = await setup();
+    await q.page.evaluate(() => {
+      const b = document.createElement("button");
+      b.textContent = "Switch to grid view";
+      b.addEventListener("click", () => ((window as unknown as { __grid: boolean }).__grid = true));
+      document.body.prepend(b);
+    });
+    await sleep(500);
+
+    // No open tab is called "grid view": the page's own button is clicked.
+    await ask(q, "Switch to grid view.");
+    expect(await q.page.evaluate(() => (window as unknown as { __grid?: boolean }).__grid)).toBe(true);
+
+    // A tab called Wikipedia exists: that is a tab switch.
+    await openAirportTab(q);
+    expect(await ask(q, "Switch to Wikipedia.")).toEqual(["Switching to Airport - Wikipedia."]);
+    expect(await frontTitle(q)).toBe("Airport - Wikipedia");
+    expect(answerCalls(q)).toHaveLength(0);
+  });
+
+  test("G7: 'click the link and tell me where it leads' clicks, waits for the new page, and answers about it", async () => {
+    const q = await setup();
+    await addDestinationLink(q);
+
+    const spoken = await ask(q, "Click the destination link and tell me where it leads.");
+    expect(spoken).toHaveLength(1);
+    // The click's own confirmation (the element's name), then the answer, in one breath.
+    expect(spoken[0]).toMatch(/^Destination link\. /);
+    expect(spoken[0]).toContain("It leads to a page about runway lights.");
+    expect(q.page.url().endsWith("/qa-dest")).toBe(true);
+
+    const context = bodyOf(answerCalls(q)[0]).contents[0].parts[1].text;
+    expect(context).toContain('"justNavigatedFrom":"Northbound Air"');
+    expect(context).toContain('"title":"Destination Page"');
+  });
+
+  test("G7b: a link that opens a new tab: the answer is about the tab it opened", async () => {
+    const q = await setup();
+    await addDestinationLink(q, "_blank");
+
+    const spoken = await ask(q, "Click the destination link and tell me where it leads.");
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0]).toMatch(/^Destination link\. It leads to a page about runway lights\.$/);
+
+    const context = bodyOf(answerCalls(q)[0]).contents[0].parts[1].text;
+    expect(context).toContain('"title":"Destination Page"');
+    expect(context).toContain('"justNavigatedFrom":"Northbound Air"');
+    // The user's next command acts on the tab they were just taken to.
+    expect(
+      await q.sw.evaluate(async () => {
+        const stored = await chrome.storage.session.get("activeTab");
+        return (await chrome.tabs.get(stored.activeTab as number)).title;
+      })
+    ).toBe("Destination Page");
+  });
+
+  test("G7c: a click that changes the page without navigating answers about the page as it now is", async () => {
+    const q = await setup();
+    await q.page.evaluate(() => {
+      const b = document.createElement("button");
+      b.textContent = "Show fare panel";
+      b.addEventListener("click", () => {
+        const p = document.createElement("p");
+        p.textContent = "Fare panel is now open with three fares.";
+        (document.querySelector("main") ?? document.body).append(p);
+      });
+      document.body.prepend(b);
+    });
+    await sleep(500);
+
+    expect(await ask(q, "Click show fare panel and tell me what changed.")).toEqual([
+      "Show fare panel. The fare panel is open.",
+    ]);
+    // Nothing loaded, so nothing is described as "where the click led".
+    expect(bodyOf(answerCalls(q)[0]).contents[0].parts[1].text).not.toContain("justNavigatedFrom");
+  });
+
+  test("G8: a page that cannot be read gets a sentence, and the clock still works there", async () => {
+    const q = await setup();
+    const blank = await q.ctx.newPage();
+    await blank.goto("about:blank");
+    await blank.bringToFront();
+
+    expect(await ask(q, "Summarize this page.")).toEqual(["I can't read this page."]);
+    expect(answerCalls(q)).toHaveLength(0);
+    expect((await ask(q, "What time is it?"))[0]).toMatch(/^It's \d{1,2}:\d{2}/);
+  });
+
+  test("G9: model trouble is spoken as a sentence and the session returns to idle", async () => {
+    const q = (qa = await launchQa({ audio: "silence.wav", settings: API_KEY }));
+    await q.routeGemini((route) => route.fulfill({ status: 429, body: "{}" }));
+    expect(await ask(q, "Summarize this page.")).toEqual(["I'm busy right now. Try again in a moment."]);
+    expect((await q.transitions()).at(-1)?.state).toBe("IDLE");
+  });
+
+  test("G9b: with no key, a question says how to add one", async () => {
+    const q = await setup({});
+    expect(await ask(q, "What's on this page?")).toEqual(["Add your API key in the extension options."]);
+  });
+
+  test("G10: the resolver gets the date and the page's title, but not the tab list or an address", async () => {
+    const q = await setup();
+    await addSubmitButton(q);
+    await q.routeGemini(async (route, call) => {
+      await fulfillGemini(route, sequenceResponse(call));
+    });
+
+    await ask(q, "Fill in John Doe, then click submit, and then click confirm booking.");
+
+    const resolverCalls = q.geminiCalls.filter(isResolver);
+    expect(resolverCalls.length).toBeGreaterThanOrEqual(1);
+    const parts = bodyOf(resolverCalls[0]).contents[0].parts.map((p) => p.text);
+    expect(parts).toHaveLength(3);
+    expect(parts[2]).toMatch(/^<browser_context>/);
+    expect(parts[2]).toContain('"now"');
+    expect(parts[2]).toContain('"title":"Northbound Air"');
+    expect(parts[2]).not.toContain('"tabs"');
+    expect(parts[2]).not.toContain("127.0.0.1"); // no address reaches the resolver (SPEC 8.3)
+    expect(bodyOf(resolverCalls[0]).systemInstruction.parts[0].text).not.toMatch(/20\d\d/);
+  });
+});

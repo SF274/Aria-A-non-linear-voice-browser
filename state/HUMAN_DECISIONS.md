@@ -113,6 +113,12 @@ An escalation without options and a recommendation is not an escalation, it is a
 - **Answer:** "Save this page" extracts the current tab's title and URL and opens `https://keep.google.com/#NOTE/?text=` + `encodeURIComponent(title + "\n" + url)` in a new tab. Tab management adds "switch to [name] tab", matched against open tabs' titles and URLs with a basic string similarity. Every global command speaks a short confirmation.
 - **Binding effect:** Overrides SPEC 6.18's bookmark row (`chrome.bookmarks.create`). The `bookmarks` permission is left in the manifest (SPEC 8.7 lists it) but is no longer used. Recorded as DEV-006.
 - **Answered:** 2026-09-19
+
+### HD-09 — The assistant must understand the page it is on, the tabs around it, and the date
+- **Asked:** not asked; given as a directive by the human on 2026-09-19 after a manual test on Wikipedia with an airport page open in another tab ("summarize the page and tell me the main heading" and "click the first link and tell me where it leads" both failed with a question about which page was meant).
+- **Answer:** (1) Build page summary and question answering now (SPEC 11.6, 11.7; T1-06 / T1-07), out of tier order. (2) Tell the model what page the user is on and what is on it, and let it see the tabs open in the same Chrome window. (3) Put the current date and time in the model's prompt and improve the resolver prompt. (4) IG-03 on the options page shows only PASS or FAIL and does not speak for a minute.
+- **Binding effect:** Page text (up to 12 000 characters for a summary, 30 000 for a question), the current page's title and hostname, and the titles and hostnames of the tabs in the same window are sent to Gemini for a question or summary. The command resolver receives the date, the time, and the current page's title only; it never receives an address or the tab list (SPEC 8.3; the D6 security test enforces it). Tab switching stays a fixed command ("switch to X tab", "next tab"); the model is not given a way to choose a tab, so SPEC 8.3's list of what the model may produce does not widen. Deviations are DEV-008.
+- **Answered:** 2026-09-19
 ---
 
 ## Open

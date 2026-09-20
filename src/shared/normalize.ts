@@ -285,8 +285,8 @@ export function sanitizeForPrompt(s: string, maxLength?: number): string {
   if (typeof maxLength === "number" && maxLength > 0) {
     res = res.slice(0, maxLength);
   }
-  // 4. Strip tag delimiters case-insensitively
-  res = res.replace(/<\/?page_elements>|<\/?user_command>/gi, "");
+  // 4. Strip tag delimiters case-insensitively (the resolver's and the Q&A prompt's)
+  res = res.replace(/<\/?(?:page_elements|user_command|page_text|browser_context|user_request)>/gi, "");
   // 5. Collapse whitespace again and trim
   res = res.replace(/\s+/g, " ").trim();
   // Ensure length constraint holds after trimming

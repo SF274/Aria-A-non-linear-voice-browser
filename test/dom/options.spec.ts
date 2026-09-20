@@ -135,11 +135,131 @@ describe("Options page DOM and storage unit tests (SPEC 5.13, 8.6, 10.3, 16 F-21
     expect(block).toContain("- **Blocks:** F-08");
   });
 
+  describe("gate IG-03 is silent and reports only PASS or FAIL", () => {
+    type Speak = (text: string, options?: { onEvent?: (e: { type: string; errorMessage?: string }) => void } & Record<string, unknown>) => void;
+    const install = (speak: Speak) => {
+      const tts = (globalThis as unknown as { chrome: { tts: { speak: Speak; stop: () => void } } }).chrome.tts;
+      tts.speak = vi.fn(speak);
+      tts.stop = vi.fn();
+      return tts;
+    };
+
+    it("speaks all ten chunks at volume 0 and top rate, queued, and passes when every one ends", async () => {
+      const tts = install((_t, o) => o?.onEvent?.({ type: "end" }));
+      const block = await runGateIG03();
+
+      const calls = (tts.speak as unknown as { mock: { calls: Array<[string, Record<string, unknown>]> } }).mock.calls;
+      expect(calls).toHaveLength(10);
+      for (const [, options] of calls) {
+        expect(options.volume).toBe(0);
+        expect(options.rate).toBe(10);
+      }
+      expect(calls.map(([, o]) => o.enqueue)).toEqual([false, ...Array(9).fill(true)]);
+      expect(block).toContain("- **Status:** PASS");
+      expect(block).toContain("all 10 chunks completed");
+      expect(block).toContain("does not exercise the ~15 s network-voice cutoff");
+    });
+
+    it("does not report PASS until the last chunk has actually finished", async () => {
+      vi.useFakeTimers();
+      try {
+        const pending: Array<() => void> = [];
+        install((_t, o) => {
+          pending.push(() => o?.onEvent?.({ type: "end" }));
+        });
+        let settled = false;
+        const run = runGateIG03().then((b) => {
+          settled = true;
+          return b;
+        });
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(settled).toBe(false); // the old code reported PASS after 600 ms regardless
+        pending.forEach((finish) => finish());
+        expect(await run).toContain("- **Status:** PASS");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("FAILs and stops the queue when a chunk errors", async () => {
+      let n = 0;
+      const tts = install((_t, o) => {
+        n++;
+        o?.onEvent?.(n === 4 ? { type: "error", errorMessage: "voice unavailable" } : { type: "end" });
+      });
+      const block = await runGateIG03();
+      expect(block).toContain("- **Status:** FAIL");
+      expect(block).toContain("voice unavailable");
+      expect(tts.stop).toHaveBeenCalled();
+    });
+
+    it("FAILs when a chunk is interrupted or cancelled", async () => {
+      install((_t, o) => o?.onEvent?.({ type: "interrupted" }));
+      expect(await runGateIG03()).toMatch(/Status:\*\* FAIL[\s\S]*chunk 1 was interrupted/);
+    });
+
+    it("FAILs, rather than hanging, when the engine never answers", async () => {
+      vi.useFakeTimers();
+      try {
+        const tts = install(() => {});
+        const run = runGateIG03();
+        await vi.advanceTimersByTimeAsync(30_500);
+        const block = await run;
+        expect(block).toContain("- **Status:** FAIL");
+        expect(block).toContain("only 0 of 10 chunks finished");
+        expect(tts.stop).toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("FAILs when chrome.tts is missing", async () => {
+      (globalThis as unknown as { chrome: { tts?: unknown } }).chrome.tts = undefined;
+      expect(await runGateIG03()).toContain("- **Status:** FAIL");
+    });
+  });
+
   it("gate IG-06 produces formatted copy-pasteable markdown block and blocks when no key is set", async () => {
     const block = await runGateIG06();
     expect(block).toContain("### IG-06 — Gemini model identifier valid, responseSchema honoured");
     expect(block).toContain("- **Status:** BLOCKED");
     expect(block).toContain("No geminiApiKey configured in options");
+  });
+
+  it("gate IG-06 reports Google's own error message, not just the status code", async () => {
+    await chrome.storage.local.set({
+      settings: {
+        geminiApiKey: "k",
+        geminiModel: "gemini-3.1-flash-lite",
+        verbosity: "fast",
+        ttsVoiceName: null,
+        ttsRate: 1.6,
+        holdKey: "Space",
+        scanKey: "KeyM",
+        telemetryEnabled: false,
+        audioEnabled: true,
+        useLocalTts: true,
+        elevenLabsApiKey: null,
+      },
+    });
+    const respond = (status: number, body: string) =>
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status })));
+    try {
+      respond(402, JSON.stringify({ error: { code: 402, message: "Billing is not enabled for this project." } }));
+      let block = await runGateIG06();
+      expect(block).toContain("- **Status:** FAIL");
+      expect(block).toContain("API returned HTTP 402: Billing is not enabled for this project.");
+
+      respond(503, "upstream unavailable");
+      block = await runGateIG06();
+      expect(block).toContain("API returned HTTP 503: upstream unavailable");
+
+      respond(500, "");
+      block = await runGateIG06();
+      expect(block).toContain("API returned HTTP 500\n");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("gate IG-10 produces formatted copy-pasteable markdown block", async () => {

@@ -256,6 +256,37 @@ export const GLOBAL_SPOKEN_NAME_MAX_CHARS = 40;
 export const TAB_MATCH_THRESHOLD = 0.5;
 
 // ---------------------------------------------------------------------------
+// SPEC 11.6 / 11.7 — page summary and question answering
+// ---------------------------------------------------------------------------
+
+/** SPEC 11.6: page text sent for a summary. */
+export const PAGE_TEXT_SUMMARY_MAX_CHARS = 12_000;
+
+/** SPEC 11.7: page text sent for a question. */
+export const PAGE_TEXT_QA_MAX_CHARS = 30_000;
+
+/**
+ * Timeout for the summary / Q&A call. SPEC 11.4's 2500 ms bounds the resolver, whose
+ * request is a few KB; this call carries up to 30 000 characters and returns prose (DEV-008).
+ */
+export const QA_TIMEOUT_MS = 8000;
+
+/** SPEC 11.7: maxOutputTokens for an answer. Summaries get a little more room. */
+export const QA_MAX_OUTPUT_TOKENS = 200;
+export const SUMMARY_MAX_OUTPUT_TOKENS = 300;
+
+/** Words allowed in a spoken answer, by verbosity (SPEC 11.6 / 11.7). */
+export const QA_MAX_WORDS = { fast: 40, verbose: 80 } as const;
+export const SUMMARY_MAX_WORDS = { fast: 45, verbose: 90 } as const;
+
+/** How long a "do X, then tell me about the result" waits for the page to finish loading. */
+export const NAVIGATION_WAIT_MS = 6000;
+
+/** Most tabs described to the model, and the longest tab title sent. */
+export const CONTEXT_MAX_TABS = 20;
+export const CONTEXT_TITLE_MAX_CHARS = 80;
+
+// ---------------------------------------------------------------------------
 // SPEC 10.6 & HD-A06 — TTS & ElevenLabs constants
 // ---------------------------------------------------------------------------
 

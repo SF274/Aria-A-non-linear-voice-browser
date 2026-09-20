@@ -19,7 +19,7 @@ Procedures for every gate are in `AGENT_RUNBOOK.md` section 4.
 | --- | --- | --- | --- | --- |
 | IG-01 | On-device STT available for en-US | F-03 offline claim | NOT_RUN | — |
 | IG-02 | `SpeechRecognition` starts in the offscreen document after the tab grant | F-02, F-03 | NOT_RUN | — |
-| IG-03 | `chrome.tts` speaks a chunked 60 s passage to completion | F-08 | NOT_RUN | — |
+| IG-03 | `chrome.tts` speaks a chunked 60 s passage to completion (the options button now runs it silently at volume 0 and checks that every chunk ends; it cannot hear the ~15 s network-voice cutoff, so a human must still hear a real-time run once) | F-08 | NOT_RUN | — |
 | IG-04 | Playwright loads the MV3 extension, service worker reachable | all e2e | NOT_RUN | — |
 | IG-05 | Index build under 120 ms for 120 elements | F-04 | PASS | 2026-09-19T14:25:35Z |
 | IG-06 | Gemini model identifier valid, `responseSchema` honoured | F-06 | NOT_RUN | — |

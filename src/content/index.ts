@@ -13,6 +13,8 @@ import { initHoldToTalk } from "./hold-to-talk";
 import { getAudioContext, playProcessingTick } from "./audio-stubs";
 import { clearHighlights, highlightCandidates } from "./highlight";
 import { reResolveElement } from "./reresolve";
+import { extractPageText, type PageText } from "./page-text";
+import { PAGE_TEXT_QA_MAX_CHARS } from "../shared/constants";
 
 let activeTtsSource: AudioBufferSourceNode | null = null;
 
@@ -154,6 +156,21 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           }
         }
         sendResponse({ ok: true });
+        return true;
+      }
+
+      // Handle page.text (SPEC 11.6 / 11.7): readable text for a spoken summary or answer.
+      if (message.type === "page.text") {
+        const payload = message.payload as { maxChars?: number } | undefined;
+        const maxChars = Math.min(Math.max(payload?.maxChars ?? 0, 0) || PAGE_TEXT_QA_MAX_CHARS, PAGE_TEXT_QA_MAX_CHARS);
+        const response: Envelope<PageText> = {
+          ns: ENVELOPE_NS,
+          target: "sw",
+          type: "page.text",
+          reqId: message.reqId,
+          payload: extractPageText(document, maxChars),
+        };
+        sendResponse(response);
         return true;
       }
 

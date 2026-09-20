@@ -27,6 +27,7 @@ import {
   toPromptElements,
 } from "./prompts";
 import { isValidVerbForRole } from "../execute/validate";
+import type { BrowserContext } from "./context";
 
 export type GeminiOutcome = "CONFIDENT" | "AMBIGUOUS" | "MISS" | "ERROR";
 
@@ -47,6 +48,8 @@ export interface GeminiResolveOptions {
   signal?: AbortSignal;
   /** Candidates from local resolver to fall back to if model is rate limited or times out. */
   localCandidates?: ElementIndexEntry[];
+  /** Date, time, current page and open tabs, sent as their own prompt part. */
+  context?: BrowserContext;
 }
 
 /**
@@ -76,7 +79,7 @@ export async function resolveWithGemini(
   indexEntries: ElementIndexEntry[],
   options: GeminiResolveOptions
 ): Promise<GeminiResolveResult> {
-  const { apiKey, model, fetchFn, signal, localCandidates } = options;
+  const { apiKey, model, fetchFn, signal, localCandidates, context } = options;
 
   // 1. Check if model tier is available
   if (!apiKey || apiKey.trim().length === 0) {
@@ -105,7 +108,7 @@ export async function resolveWithGemini(
       ? request.index
       : toPromptElements(indexEntries);
 
-  const requestBody = buildResolverRequestBody(request.transcript, promptElements);
+  const requestBody = buildResolverRequestBody(request.transcript, promptElements, context);
 
   // Index map for fast element lookup
   const entryById = new Map<string, ElementIndexEntry>();

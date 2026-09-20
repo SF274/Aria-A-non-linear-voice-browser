@@ -38,7 +38,8 @@ export type GlobalIntent =
   | { kind: "new_tab" }
   | { kind: "close_tab" }
   | { kind: "cycle_tab"; direction: 1 | -1 }
-  | { kind: "switch_tab"; query: string }
+  /** `soft`: no "tab" in the phrase ("switch to Wikipedia"), so it only counts if a tab matches. */
+  | { kind: "switch_tab"; query: string; soft?: boolean }
   | { kind: "history"; direction: "back" | "forward" }
   | { kind: "reload" }
   | { kind: "search"; query: string }
@@ -58,6 +59,10 @@ const SWITCH_TAB = [
   /^(?:switch|go|jump|change|move|flip)\s+(?:back\s+)?to\s+(?:the\s+|my\s+)?(.+?)\s+tab$/i,
   /^(?:switch|go|jump|change|move)\s+to\s+(?:the\s+)?tab\s+(?:called\s+|named\s+|with\s+)?(.+)$/i,
 ];
+// "switch to Wikipedia" / "switch to the airport page": no "tab" spoken, so the pipeline
+// treats it as a tab switch only when an open tab really matches, else it is a page command.
+const SWITCH_SOFT =
+  /^(?:switch|flip|jump)\s+(?:back\s+)?to\s+(?:the\s+|my\s+)?(.+?)(?:\s+(?:page|window|site|website))?$/i;
 // "search flights" must stay a click on the demo page's Search button, so a
 // search intent always needs "for" (or "look up").
 const SEARCH = [
@@ -100,6 +105,9 @@ export function matchGlobalIntent(transcript: string): GlobalIntent | null {
     const query = pattern.exec(text)?.[1]?.trim();
     if (query) return { kind: "switch_tab", query };
   }
+
+  const soft = SWITCH_SOFT.exec(text)?.[1]?.trim();
+  if (soft) return { kind: "switch_tab", query: soft, soft: true };
 
   for (const pattern of SEARCH) {
     const query = pattern.exec(text)?.[1]?.trim();

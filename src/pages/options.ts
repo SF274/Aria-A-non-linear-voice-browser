@@ -210,6 +210,16 @@ export async function runGateIG01(): Promise<string> {
   return block;
 }
 
+/** Longest a silent run of the ten-sentence passage may take before it counts as hung. */
+const IG03_TIMEOUT_MS = 30_000;
+
+/**
+ * IG-03 runs the whole chunked passage through chrome.tts silently (volume 0, top
+ * rate) and reports only PASS or FAIL. It checks what a script can check: that every
+ * queued chunk reaches "end" and none errors or is dropped. It cannot hear the ~15 s
+ * cutoff some network voices have (AS-03), which needs real-time speech; the result
+ * line says so rather than claiming it.
+ */
 export async function runGateIG03(): Promise<string> {
   const date = new Date().toISOString();
   let status: string;
@@ -219,46 +229,53 @@ export async function runGateIG03(): Promise<string> {
     status = "FAIL";
     resultDetail = "chrome.tts API not available in this context";
   } else {
-    // Generate test passage chunked per SPEC 10.6.2
+    // Ten sentences, as SPEC 10.6.2 chunks a long utterance.
     const testSentence = "ECHO operates any web page by voice with the screen off. ";
     const passage = testSentence.repeat(10);
     const sentences = passage.match(/[^.!?]+[.!?]+/g) || [passage];
 
+    const startTime = Date.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const startTime = Date.now();
       await new Promise<void>((resolve, reject) => {
         let completed = 0;
-        const total = sentences.length;
+        timer = setTimeout(
+          () => reject(new Error(`only ${completed} of ${sentences.length} chunks finished in ${IG03_TIMEOUT_MS / 1000} s`)),
+          IG03_TIMEOUT_MS
+        );
 
-        const timer = setTimeout(() => {
-          resolve();
-        }, 600);
-
-        for (let i = 0; i < total; i++) {
-          chrome.tts.speak(sentences[i], {
+        sentences.forEach((sentence, i) => {
+          chrome.tts.speak(sentence, {
             enqueue: i > 0,
+            volume: 0,
+            rate: 10,
             onEvent: (event) => {
               if (event.type === "end") {
                 completed++;
-                if (completed === total) {
-                  clearTimeout(timer);
-                  resolve();
-                }
+                if (completed === sentences.length) resolve();
               } else if (event.type === "error") {
-                clearTimeout(timer);
                 reject(new Error(event.errorMessage || "TTS error"));
+              } else if (event.type === "interrupted" || event.type === "cancelled") {
+                reject(new Error(`chunk ${i + 1} was ${event.type}`));
               }
             },
           });
-        }
+        });
       });
 
-      const elapsed = Date.now() - startTime;
       status = "PASS";
-      resultDetail = `chrome.tts spoke chunked passage (${sentences.length} sentences) in ${elapsed} ms`;
+      resultDetail = `all ${sentences.length} chunks completed in ${Date.now() - startTime} ms (silent fast run; does not exercise the ~15 s network-voice cutoff, AS-03)`;
     } catch (e) {
+      // Do not leave a half-spoken queue behind.
+      try {
+        chrome.tts.stop?.();
+      } catch {
+        // nothing to stop
+      }
       status = "FAIL";
       resultDetail = `chrome.tts error: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
     }
   }
 
@@ -274,6 +291,23 @@ export async function runGateIG03(): Promise<string> {
 
   appendLog(block);
   return block;
+}
+
+/** Google's `{"error":{"message":"..."}}` text, else the raw body, capped at 300 chars. */
+async function googleErrorMessage(res: Response): Promise<string> {
+  try {
+    const text = (await res.text()).trim();
+    if (!text) return "";
+    try {
+      const message = (JSON.parse(text) as { error?: { message?: unknown } }).error?.message;
+      if (typeof message === "string" && message) return message.slice(0, 300);
+    } catch {
+      // not JSON: fall through to the raw text
+    }
+    return text.slice(0, 300);
+  } catch {
+    return "";
+  }
 }
 
 export async function runGateIG06(): Promise<string> {
@@ -316,7 +350,10 @@ export async function runGateIG06(): Promise<string> {
         resultDetail = `Model ${model} accepted request and honoured responseSchema`;
       } else {
         status = "FAIL";
-        resultDetail = `API returned HTTP ${res.status}: ${res.statusText}`;
+        // The reason is in the body (statusText is empty over HTTP/2). The prompt
+        // here is the fixed string "ping", so Google's error text holds no page data.
+        const reason = await googleErrorMessage(res);
+        resultDetail = `API returned HTTP ${res.status}${reason ? `: ${reason}` : ""}`;
       }
     } catch (e) {
       status = "FAIL";
@@ -428,7 +465,18 @@ export async function initOptionsPage(): Promise<void> {
   });
 
   btnIG03?.addEventListener("click", () => {
-    void runGateIG03();
+    // Silent, but not instant: show that it is running and ignore a second click.
+    if (btnIG03 instanceof HTMLButtonElement) {
+      const label = btnIG03.textContent;
+      btnIG03.disabled = true;
+      btnIG03.textContent = "Running IG-03…";
+      void runGateIG03().finally(() => {
+        btnIG03.disabled = false;
+        btnIG03.textContent = label;
+      });
+    } else {
+      void runGateIG03();
+    }
   });
 
   btnIG06?.addEventListener("click", () => {
