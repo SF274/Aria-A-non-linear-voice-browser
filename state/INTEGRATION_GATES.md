@@ -69,6 +69,17 @@ Run in this order. The first three are the ones most likely to invalidate the pl
 - **Blocks:** F-04 — now unblocked
 - **Fallback applied:** none needed
 
+### IG-11 — GPTZero classifies live text and the parser reads the real response (F-22)
+- **Status:** PASS
+- **Date:** 2026-09-20
+- **Chrome:** Chrome, extension options page, real network
+- **Run by:** the human (Madhav)
+- **Command:** options page, Content Authenticity, "Test key on a sample"
+- **Result:** `Key works. Sample scored 100% A.I. (AI_ONLY). You would hear: "Heads up: most of this page reads as A.I. generated text. Watch out for misinformation or incorrect details."` This closes the risk recorded in DEV-011 and N-0xx: the success response shape had never been observed, only a 403 confirming the URL, the method and the `x-api-key` header. `parseVerdict` produced a verdict from a live body, so at least one of its three score fields is present, and `document_classification` arrives and is read.
+- **Blocks:** F-22 — now unblocked
+- **Fallback applied:** none needed
+- **Still unverified:** (1) whether `paragraphs[]` / `sentences[]` are in the response, so it is unknown which of the three extraction tiers HD-14's per-paragraph rule is actually running on — the raw body is logged to the options page console and answers this. (2) The false-positive rate on human prose: the probe sample is machine written by construction, so nothing here tests what an ordinary human-written page scores. Asking for a summary of a human-written page and listening for silence is the quickest check.
+
 ```
 ### IG-nn — <name>
 - **Status:**
